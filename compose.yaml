@@ -1,0 +1,18 @@
+services:
+  streamlit_app:
+    build: .
+    command: uv run semente streamlit
+    volumes:
+      - .:/app
+      - /app/.venv
+      - ./tmp:/app/tmp
+    ports:
+      - "8501:8501"
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
