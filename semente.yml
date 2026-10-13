@@ -1,5 +1,5 @@
-name: pasto-legal
-language: pt-BR
+name: pasto10
+language: en
 domain_module: domain
 engine: agno
 prompts_dir: domain/prompts
