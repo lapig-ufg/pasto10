@@ -1,9 +1,34 @@
+"""Basemap service — keyless (or API-key) XYZ raster tiles behind the confirmation image.
+
+Builds a Web Mercator mosaic centered on a coordinate from public tile
+services (Esri World Imagery, then OpenStreetMap). Which providers are tried
+is read at call time from the environment (see ``resolve_providers``):
+
+- ``PASTO10_BASEMAP_PROVIDERS``: comma-separated provider names, in order
+  (default ``"esri,osm"``; ``""`` or ``"none"`` disables the basemap).
+- ``ARCGIS_API_KEY``: when set, Esri tiles come from the ArcGIS Location
+  Platform endpoint authenticated with the key (``token`` query parameter).
+  The key is never written to the logs by this module. Note that urllib3
+  logs every request URL (token included) at DEBUG level; this module does
+  not change any global logger, so keep ``urllib3`` above DEBUG when a key
+  is configured.
+
+Downloads share one ``requests.Session`` (closed at interpreter exit) and are
+bounded by a total deadline; network failures never propagate, the caller
+falls back to a neutral background. A timed-out call may leave up to
+``MAX_TILE_WORKERS`` download threads running in the background for at most
+about the per-request timeout (~7 s); their results are discarded.
+"""
+
+import atexit
 import math
+import os
 import time
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from io import BytesIO
 from typing import Callable, Optional, Sequence, Tuple
+from urllib.parse import quote
 
 import requests
 from PIL import Image
@@ -21,33 +46,78 @@ REQUEST_TIMEOUT = (3, 4)
 BASEMAP_DEADLINE_SECONDS = 6.0
 MAX_TILE_WORKERS = 8
 
+PROVIDERS_ENV = "PASTO10_BASEMAP_PROVIDERS"
+ARCGIS_API_KEY_ENV = "ARCGIS_API_KEY"
+DEFAULT_PROVIDER_NAMES = "esri,osm"
+_DISABLED_PROVIDER_NAMES = ("", "none")
+_MASK = "***"
+
 _SESSION = requests.Session()
 _SESSION.headers.update({"User-Agent": USER_AGENT})
+atexit.register(_SESSION.close)
 
 
 @dataclass(frozen=True)
 class TileProvider:
-    """A keyless XYZ raster tile service usable as a basemap.
+    """An XYZ raster tile service usable as a basemap.
 
     Attributes:
         name (str): Short identifier of the provider (e.g. "esri").
         url_template (str): Tile URL with ``{z}``, ``{x}`` and ``{y}`` placeholders.
-        attribution (str): Attribution text that must be drawn on the image.
+        attribution (str): Attribution text that must be drawn on the image
+            (may span several lines, separated by ``"\\n"``).
         max_zoom (int): Highest zoom level the provider serves.
+        token (str, optional): API key appended as the ``token`` query
+            parameter of every tile URL. Excluded from ``repr`` so it never leaks into logs.
     """
 
     name: str
     url_template: str
     attribution: str
     max_zoom: int
+    token: Optional[str] = field(default=None, repr=False)
+
+    def tile_url(self, zoom: int, x: int, y: int) -> str:
+        """Builds the URL of one tile.
+
+        Args:
+            zoom (int): Tile zoom level.
+            x (int): Tile column.
+            y (int): Tile row.
+
+        Returns:
+            str: The tile URL, with ``token=<key>`` appended (``?`` or ``&``,
+            depending on whether the template already has a query string)
+            when the provider has a token.
+        """
+        url = self.url_template.format(z=zoom, x=x, y=y)
+        if self.token:
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}token={quote(self.token, safe='')}"
+        return url
+
+    def mask(self, text: str) -> str:
+        """Replaces every occurrence of the provider token in a text.
+
+        Args:
+            text (str): Any text that may contain the token (e.g. an error message with the URL).
+
+        Returns:
+            str: The text with the token (raw and URL-quoted) replaced by ``"***"``.
+        """
+        if not self.token:
+            return text
+        return text.replace(quote(self.token, safe=""), _MASK).replace(self.token, _MASK)
 
 
 ESRI_WORLD_IMAGERY = TileProvider(
     name="esri",
     url_template="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    attribution="Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+    attribution="Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community\nPowered by Esri",
     max_zoom=18,
 )
+
+ESRI_KEYED_URL_TEMPLATE = "https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
 
 OPENSTREETMAP = TileProvider(
     name="osm",
@@ -57,6 +127,36 @@ OPENSTREETMAP = TileProvider(
 )
 
 DEFAULT_PROVIDERS: Tuple[TileProvider, ...] = (ESRI_WORLD_IMAGERY, OPENSTREETMAP)
+_PROVIDERS_BY_NAME = {provider.name: provider for provider in DEFAULT_PROVIDERS}
+
+
+def resolve_providers() -> Tuple[TileProvider, ...]:
+    """Reads the basemap providers to try from the environment, at call time.
+
+    ``PASTO10_BASEMAP_PROVIDERS`` lists provider names in order (default
+    ``"esri,osm"``); unknown names are skipped with a warning, and ``""`` or
+    ``"none"`` disables the basemap (neutral background, no download). When
+    ``ARCGIS_API_KEY`` is set, the Esri provider switches to the ArcGIS
+    Location Platform endpoint authenticated with that key.
+
+    Returns:
+        Tuple[TileProvider, ...]: Providers in the configured order (possibly empty).
+    """
+    raw = os.environ.get(PROVIDERS_ENV, DEFAULT_PROVIDER_NAMES).strip().lower()
+    if raw in _DISABLED_PROVIDER_NAMES:
+        return ()
+
+    api_key = os.environ.get(ARCGIS_API_KEY_ENV, "").strip()
+    providers = []
+    for name in (part.strip() for part in raw.split(",")):
+        provider = _PROVIDERS_BY_NAME.get(name)
+        if provider is None:
+            log_warning(f"resolve_providers: unknown basemap provider '{name}' ignored")
+            continue
+        if provider is ESRI_WORLD_IMAGERY and api_key:
+            provider = replace(provider, url_template=ESRI_KEYED_URL_TEMPLATE, token=api_key)
+        providers.append(provider)
+    return tuple(providers)
 
 
 def latlon_to_pixel(latitude: float, longitude: float, zoom: int) -> Tuple[float, float]:
@@ -126,9 +226,10 @@ def choose_zoom(
 def fetch_tile(provider: TileProvider, zoom: int, x: int, y: int) -> Image.Image:
     """Downloads one raster tile from a provider.
 
-    Uses the module-level ``requests.Session`` (connection reuse, with the
-    ``USER_AGENT`` header required by the tile usage policies) and the
-    ``REQUEST_TIMEOUT`` (connect, read) timeouts.
+    The URL comes from ``TileProvider.tile_url`` (token included when the
+    provider has one). Uses the module-level ``requests.Session``
+    (connection reuse, with the ``USER_AGENT`` header required by the tile
+    usage policies) and the ``REQUEST_TIMEOUT`` (connect, read) timeouts.
 
     Args:
         provider (TileProvider): The tile service.
@@ -143,7 +244,7 @@ def fetch_tile(provider: TileProvider, zoom: int, x: int, y: int) -> Image.Image
         requests.RequestException: On network errors, timeouts or HTTP error statuses.
         PIL.UnidentifiedImageError: If the response body is not an image.
     """
-    url = provider.url_template.format(z=zoom, x=x, y=y)
+    url = provider.tile_url(zoom, x, y)
     response = _SESSION.get(url, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     return Image.open(BytesIO(response.content)).convert("RGB")
@@ -159,11 +260,14 @@ def _build_mosaic(
 ) -> Image.Image:
     """Stitches the tiles covering a pixel window into a single image.
 
-    Tiles are downloaded in parallel (up to ``MAX_TILE_WORKERS`` threads).
-    The function never blocks past ``timeout``: on return or failure the
-    pool is shut down without waiting, and pending downloads are cancelled
-    (the ones already running finish in the background and are discarded).
-    Rows outside the world are left blank.
+    Tiles are downloaded in parallel by a pool created per call (up to
+    ``MAX_TILE_WORKERS`` threads). The function never blocks past
+    ``timeout``: on return or failure the pool is shut down without waiting
+    and queued downloads are cancelled. Residual threads: downloads already
+    running cannot be interrupted, so up to ``MAX_TILE_WORKERS`` threads may
+    keep running in the background until their request ends — at most the
+    connect + read timeout of ``REQUEST_TIMEOUT`` (~7 s) — and their results
+    are discarded. Rows outside the world are left blank.
 
     Args:
         provider (TileProvider): The tile service.
@@ -221,18 +325,19 @@ def build_basemap(
     longitude: float,
     zoom: int,
     size: Tuple[int, int],
-    providers: Sequence[TileProvider] = DEFAULT_PROVIDERS,
+    providers: Optional[Sequence[TileProvider]] = None,
     fetch: Optional[Callable[[TileProvider, int, int, int], Image.Image]] = None,
 ) -> Tuple[Optional[Image.Image], Optional[TileProvider]]:
-    """Builds a basemap image centered on a coordinate from keyless tile services.
+    """Builds a basemap image centered on a coordinate from tile services.
 
-    Providers are tried in order (Esri World Imagery first, OpenStreetMap as
-    the alternative); the first one whose tiles all download successfully is
+    Providers are tried in order (by default Esri World Imagery first,
+    OpenStreetMap as the alternative); the first one whose tiles all download successfully is
     used. The whole call is bounded by ``BASEMAP_DEADLINE_SECONDS`` (read at
     call time), shared by all providers: each provider only gets the time
     left, and once it runs out no further provider is tried. Network
     failures and timeouts never propagate: the function returns
     ``(None, None)`` so the caller can fall back to a neutral background.
+    Warnings never contain a provider token (see ``TileProvider.mask``).
 
     Args:
         latitude (float): Center latitude in decimal degrees.
@@ -240,7 +345,9 @@ def build_basemap(
         zoom (int): Tile zoom level; callers must pick one that every
             provider in ``providers`` serves (see ``choose_zoom``).
         size (Tuple[int, int]): Output (width, height) in pixels.
-        providers (Sequence[TileProvider]): Providers to try, in order.
+        providers (Sequence[TileProvider], optional): Providers to try, in
+            order; defaults to :func:`resolve_providers` (environment). An
+            empty sequence returns ``(None, None)`` without any download.
         fetch (Callable, optional): Tile fetcher ``(provider, z, x, y) -> Image``;
             defaults to :func:`fetch_tile` (resolved at call time so tests can
             patch it).
@@ -250,6 +357,8 @@ def build_basemap(
         no provider could serve the tiles within the deadline.
     """
     fetcher = fetch or fetch_tile
+    if providers is None:
+        providers = resolve_providers()
     center_x, center_y = latlon_to_pixel(latitude, longitude, zoom)
     origin = (center_x - size[0] / 2, center_y - size[1] / 2)
     deadline = time.monotonic() + BASEMAP_DEADLINE_SECONDS
@@ -264,5 +373,5 @@ def build_basemap(
             log_debug(f"build_basemap: tiles from {provider.name} at z={zoom}")
             return mosaic, provider
         except Exception as e:
-            log_warning(f"build_basemap: provider {provider.name} failed: {e}")
+            log_warning(f"build_basemap: provider {provider.name} failed: {provider.mask(str(e))}")
     return None, None

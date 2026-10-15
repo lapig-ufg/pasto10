@@ -1,3 +1,11 @@
+"""Feature schemas — the single model of every registrable geographic feature.
+
+``Feature`` holds the geometry, area, neutral type key and free-form
+metadata of one feature; ``RegisteredFeatures`` is the user's collection,
+stored serialized in ``session_state["all_properties"]`` (see
+``domain/utils/feature_utils.py``).
+"""
+
 from uuid import uuid4
 from typing import List, Optional, Union
 
@@ -9,6 +17,8 @@ class FeatureMetadata(BaseModel):
 
     Any feature type can carry any key/value pair (e.g. ``radius``,
     ``center``, ``name``), so new feature types never require new schemas.
+    ``unit`` is optional, so features serialized before it existed still
+    validate.
     """
 
     key: str = Field(
@@ -22,6 +32,20 @@ class FeatureMetadata(BaseModel):
         description="Attribute value.",
         examples=[200]
     )
+
+    unit: Optional[str] = Field(
+        default=None,
+        description="Unit of the value, when it has one (e.g. m).",
+        examples=["m"]
+    )
+
+    def display_value(self) -> str:
+        """Returns the value followed by its unit, when set (e.g. ``"300 m"``).
+
+        Returns:
+            str: ``"<value> <unit>"`` or ``"<value>"``.
+        """
+        return f"{self.value} {self.unit}" if self.unit else f"{self.value}"
 
 
 class Feature(BaseModel):
@@ -102,14 +126,16 @@ class Feature(BaseModel):
         """Builds a one-line, LLM-readable description of the feature.
 
         The text lists the id, the display name (when set), the neutral type,
-        the area in hectares and every metadata entry except ``name``. It is
-        used in tool results and in the agent instructions.
+        the area in hectares and every metadata entry except ``name`` (with
+        its unit, e.g. ``radius: 300 m``). Kept for debugging and parity with
+        Pasto Legal; it is not sent to the LLM because it exposes the feature
+        id and the internal type key (see ``summarize_feature``).
 
         Returns:
             str: The feature description.
         """
         details = ", ".join(
-            f"{entry.key}: {entry.value}"
+            f"{entry.key}: {entry.display_value()}"
             for entry in self.metadata
             if entry.key != "name"
         )
@@ -153,7 +179,9 @@ class RegisteredFeatures(BaseModel):
 
         Features are clustered by ``feature_type`` inside
         ``<feature_type>...</feature_type>`` tags, one ``describe()`` line
-        per feature.
+        per feature. Not used in the agent prompt: it exposes feature ids and
+        type keys, so ``domain/agent.py`` builds the ``<registrations>``
+        block from ``summarize_feature`` instead.
 
         Returns:
             str: The prompt block, or an empty string when nothing is registered.

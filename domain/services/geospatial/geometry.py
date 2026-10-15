@@ -1,3 +1,9 @@
+"""Geometry service — pure-Python geodesic buffer polygons.
+
+Builds the circular buffer area Feature (64-vertex ring on a sphere, area
+π·r²/10⁴ ha) without any projection library.
+"""
+
 import math
 from typing import List, Tuple
 
@@ -135,8 +141,8 @@ def build_buffered_area(
 
     Generates the circular polygon in pure Python (no projection library),
     computes its area as π·r²/10⁴ hectares and packages everything into the
-    general Feature model with ``feature_type='buffer_area'``. The radius and
-    the center (``"lat, lon"``) are stored as metadata; a generated id
+    general Feature model with ``feature_type='buffer_area'``. The radius
+    (``unit="m"``) and the center (``"lat, lon"``) are stored as metadata; a generated id
     becomes the stable ``feature_id``.
 
     Args:
@@ -160,7 +166,7 @@ def build_buffered_area(
         feature_id=Feature.generate_id(),
         coords=coordinates,
         metadata=[
-            FeatureMetadata(key="radius", value=radius),
+            FeatureMetadata(key="radius", value=radius, unit="m"),
             FeatureMetadata(key="center", value=f"{latitude}, {longitude}"),
         ],
         total_area=round(circle_area_hectares(radius), 2),

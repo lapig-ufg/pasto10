@@ -127,7 +127,15 @@ property_tools:
 
       Use this tool when the user gives a coordinate (latitude/longitude) of a
       place they want to monitor and agrees to register the area around it.
+      If the user explicitly asks to register an area and gives the
+      coordinate, call this tool right away, without asking for agreement first.
       The area is generated locally; no external registry is queried.
+
+      Coordinates must be in decimal degrees. Convert a coordinate given in
+      degrees, minutes and seconds (DMS) before calling: decimal = |D| + M/60 + S/3600,
+      then make it negative for S/W (or when D is already negative). Minutes may
+      also come as decimals (e.g. 15°30.5'S). Examples: 15°30'0"S 47°30'0"W -> -15.5, -47.5;
+      -15°30'0" -> -15.5.
 
       Args:
           latitude (float): Latitude of the center point in decimal degrees (between -85 and 85).
@@ -143,10 +151,10 @@ property_tools:
         The coordinate ({latitude}, {longitude}) is not valid. Apologize to the user and explain that the latitude must be between -{max_latitude} and {max_latitude} degrees and the longitude between -180 and 180 degrees (decimal degrees), then ask for the coordinate again.
       confirm_buffer_area: |
         The area image was sent to the user. Ask the user whether the following area is the correct one:
-        {area_details}
-        Mention the radius of {radius} m and that they can choose another radius between {min_radius} and {max_radius} m (default {default_radius} m).
+        > {area_details}
+        Mention that the radius is {radius} m and that they can choose another radius between {min_radius} and {max_radius} m (default: {default_radius} m).
       error: |
-        Unexpected error: {error}. Apologize to the user and suggest trying again in a moment.
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
   confirm_registration:
     description: |
       Confirms the pending area shown in the image.
@@ -164,9 +172,11 @@ property_tools:
       no_pending_area: |
         There is no area pending confirmation. Ask the user for the coordinate of the area they want to register first.
       confirmed_prompt_name: |
-        The area with identifier {feature_id} was confirmed. Ask the user what name they would like to give this area to complete the registration.
+        The area was confirmed:
+        > {area_details}
+        Ask the user what name they would like to give this area to complete the registration.
       error: |
-        Unexpected error: {error}. Apologize to the user and suggest trying again in a moment.
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
   complete_registration:
     description: |
       Completes the registration of the confirmed area with the name chosen by the user.
@@ -181,12 +191,11 @@ property_tools:
       registration_complete: |
         Area registered successfully.
         Name: {name}
-        Feature ID: {feature_id}
         Details: {area_details}
 
         Tell the user, in one short message, that the area was registered with this name.
       error: |
-        Unexpected error: {error}. Apologize to the user and suggest trying again in a moment.
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
   cancel_registration:
     description: |
       Cancels the pending registration.
@@ -196,6 +205,6 @@ property_tools:
       the registration.
     results:
       cancelled: |
-        The registration was cancelled and nothing was saved. Let the user know briefly and say they can send a new coordinate (and radius) whenever they want to register an area.
+        The registration was cancelled and nothing was saved. If the user asked for a different radius or location, repeat the new value back and ask them to confirm so the new area can be generated; otherwise, let them know briefly that they can send a new coordinate (and radius) whenever they want to register an area.
       error: |
-        Unexpected error: {error}. Apologize to the user and suggest trying again in a moment.
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.

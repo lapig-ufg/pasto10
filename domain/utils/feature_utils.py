@@ -1,4 +1,15 @@
-from domain.schemas.feature import RegisteredFeatures
+"""Feature utilities — session_state persistence and user-facing summaries.
+
+``all_properties`` in ``session_state`` holds the serialized
+``RegisteredFeatures``; read and write it only through
+``get_registered_features`` / ``set_registered_features``.
+``summarize_feature`` renders the ``single_agent.candidate_summary`` template
+of ``domain/prompts/agents.yml`` (no internal ids or type keys).
+"""
+
+from semente.configs.prompts import get_agent_config
+
+from domain.schemas.feature import Feature, RegisteredFeatures
 
 
 def get_registered_features(session_state) -> RegisteredFeatures:
@@ -32,3 +43,59 @@ def set_registered_features(session_state, registered: RegisteredFeatures) -> No
         (plain dict) form of ``registered``.
     """
     session_state["all_properties"] = registered.model_dump()
+
+
+def _safe_summary(feature: Feature, config: dict) -> str:
+    """Builds a minimal summary without internal ids or type keys.
+
+    Uses the display name from ``feature_type_names`` (or
+    ``feature_type_fallback``) plus the total area in hectares, when known.
+
+    Args:
+        feature (Feature): The feature to summarize.
+        config (dict): The ``single_agent`` prompt config (may be empty).
+
+    Returns:
+        str: E.g. ``"circular area · 28.27 ha"``.
+    """
+    type_names = config.get("feature_type_names") or {}
+    display_name = type_names.get(feature.feature_type) or config.get("feature_type_fallback") or "area"
+    display_name = str(display_name).strip()
+    if feature.total_area is None:
+        return display_name
+    return f"{display_name} · {feature.total_area} ha"
+
+
+def summarize_feature(feature: Feature) -> str:
+    """Builds the user-facing one-line summary of a buffer area.
+
+    Fills ``single_agent.candidate_summary`` (``{latitude}``, ``{longitude}``,
+    ``{radius}``, ``{area}``) from the ``center`` and ``radius`` metadata and
+    the total area. Used for the pending/final instructions and the tool
+    results, so the model never sees internal ids or type keys there.
+
+    Args:
+        feature (Feature): The feature to summarize.
+
+    Returns:
+        str: The summary. When the feature lacks a parseable ``center`` or a
+        ``radius`` (non-buffer feature types), has no ``total_area``, or the
+        ``candidate_summary`` template is missing or cannot be filled
+        (unknown placeholder or malformed braces), a safe fallback (type
+        display name + area in ha, when known) is returned instead; it never
+        contains the feature id or the neutral type key and never raises
+        on template errors.
+    """
+    config = get_agent_config("single_agent") or {}
+    center = feature.get_metadata("center")
+    radius = feature.get_metadata("radius")
+    template = config.get("candidate_summary")
+    if center is None or radius is None or feature.total_area is None or not template:
+        return _safe_summary(feature, config)
+    try:
+        latitude, longitude = (part.strip() for part in str(center).split(","))
+        return str(template).strip().format(
+            latitude=latitude, longitude=longitude, radius=radius, area=feature.total_area,
+        )
+    except (KeyError, ValueError, IndexError):
+        return _safe_summary(feature, config)

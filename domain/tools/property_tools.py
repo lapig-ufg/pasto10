@@ -1,4 +1,17 @@
+"""Area registration tools — circular (buffer) area around a coordinate.
+
+Flow driven by ``session_state["registration_state"]`` (see ``domain/agent.py``):
+``start_buffer_registration_by_coordinate`` leaves a candidate pending,
+``confirm_registration`` moves it to the naming step (or registers it at once
+when a name is given), ``complete_registration`` registers it under a name
+and ``cancel_registration`` aborts at any step. The tools are thin: geometry
+and image rendering live in ``domain/services/geospatial/`` and every text
+returned to the model comes from ``domain/prompts/tools.yml``. Unexpected
+errors are logged in full and the model only gets a generic message.
+"""
+
 import math
+import traceback
 from typing import Optional
 
 from semente import Context as RunContext
@@ -8,8 +21,8 @@ from semente.configs.prompts import get_tool_description, get_tool_result_text
 
 from domain.schemas.feature import Feature, FeatureMetadata
 from domain.services.geospatial.geometry import build_buffered_area
-from domain.services.geospatial.image import render_buffer_image
-from domain.utils.feature_utils import get_registered_features, set_registered_features
+from domain.services.geospatial.image import RenderedImage, render_buffer_image
+from domain.utils.feature_utils import get_registered_features, set_registered_features, summarize_feature
 
 # Bounds of the buffer radius accepted by the buffer registration tool (meters).
 _MIN_RADIUS_METERS = 50
@@ -18,6 +31,23 @@ _DEFAULT_RADIUS_METERS = 200
 # Web Mercator basemaps do not cover the poles; ±85° keeps the image meaningful.
 _MAX_ABS_LATITUDE = 85
 _MAX_ABS_LONGITUDE = 180
+
+
+def _unexpected_error(tool_key: str) -> ToolResult:
+    """Logs the exception being handled and returns the tool's generic error text.
+
+    Must be called from an ``except`` block. The full traceback goes to the
+    error log only; the model receives the ``results.error`` text of the
+    tool, which carries no exception details.
+
+    Args:
+        tool_key (str): Tool name under ``property_tools`` in ``tools.yml``.
+
+    Returns:
+        ToolResult: The ``error`` instructions.
+    """
+    log_error(f"{tool_key}: unexpected error\n{traceback.format_exc()}")
+    return ToolResult(content=get_tool_result_text("property_tools", tool_key, "error"))
 
 
 def _validate_buffer_radius(radius: float, tool_key: str) -> ToolResult | None:
@@ -75,43 +105,43 @@ def _validate_coordinates(latitude: float, longitude: float, tool_key: str) -> T
     return None
 
 
-def _register_buffer_candidate(
-    run_context: RunContext,
+def _build_buffer_candidate(
     latitude: float,
     longitude: float,
     radius: float = _DEFAULT_RADIUS_METERS,
-) -> tuple[Feature, bytes]:
-    """Builds a buffer area candidate, renders its image and stores it as pending.
+) -> tuple[Feature, RenderedImage, str]:
+    """Builds a buffer area candidate, its confirmation image and result text.
 
-    The image is rendered before the session is touched, so any failure
-    leaves the session state unchanged. Basemap network failures do not
-    count as failures (the image falls back to a neutral background). Does
-    not validate inputs; callers must do it beforehand.
+    Pure with respect to the session: nothing is written to
+    ``session_state``, so the caller can store the candidate only after
+    every step (geometry, image, summary and template) has succeeded.
+    Basemap network failures do not count as failures (the image falls back
+    to a neutral background). Does not validate inputs; callers must do it
+    beforehand.
 
     Args:
-        run_context (RunContext): The run context holding ``session_state``.
         latitude (float): Center latitude in decimal degrees.
         longitude (float): Center longitude in decimal degrees.
         radius (float): Buffer radius in meters.
 
     Returns:
-        Tuple (Feature, PNG image bytes).
+        Tuple (Feature, RenderedImage, str): the candidate, its encoded image
+        (JPEG over a tile basemap, PNG over the neutral background) and the
+        ``confirm_buffer_area`` text (area summary, radius and its bounds).
 
     Raises:
-        Exception: Any geometry/rendering error; the caller renders the
-        tool-specific error text.
-
-    Side effects:
-        Sets ``session_state["candidate_properties"]`` to the serialized
-        candidate (single-item list) and ``session_state["registration_state"]``
-        to ``"pending"``.
+        Exception: Any geometry, rendering, summary or template error; the
+        caller renders the tool-specific error text.
     """
     buffer_area = build_buffered_area(latitude=latitude, longitude=longitude, radius=radius)
-    img_bytes = render_buffer_image(buffer_area)
-
-    run_context.session_state["candidate_properties"] = [buffer_area.model_dump()]
-    run_context.session_state["registration_state"] = "pending"
-    return buffer_area, img_bytes
+    rendered = render_buffer_image(buffer_area)
+    content = get_tool_result_text(
+        "property_tools", "start_buffer_registration_by_coordinate", "confirm_buffer_area",
+        area_details=summarize_feature(buffer_area),
+        radius=radius, default_radius=_DEFAULT_RADIUS_METERS,
+        min_radius=_MIN_RADIUS_METERS, max_radius=_MAX_RADIUS_METERS,
+    )
+    return buffer_area, rendered, content
 
 
 @tool(description=get_tool_description("property_tools", "start_buffer_registration_by_coordinate"))
@@ -124,8 +154,9 @@ def start_buffer_registration_by_coordinate(
     """Starts the registration of a circular buffer area around a coordinate.
 
     Validates the radius (50–1000 m) and the coordinate (finite, |lat| ≤ 85°,
-    |lon| ≤ 180°), builds the buffer polygon, renders the confirmation image
-    and leaves the area pending the user's confirmation.
+    |lon| ≤ 180°), builds the buffer polygon, renders the confirmation image,
+    builds the result text and only then leaves the area pending the user's
+    confirmation.
 
     Args:
         run_context (RunContext): The run context holding ``session_state``.
@@ -134,14 +165,17 @@ def start_buffer_registration_by_coordinate(
         radius (int): Buffer radius in meters (50 to 1000). Default: 200.
 
     Returns:
-        ToolResult: Confirmation instructions plus the PNG image on success;
+        ToolResult: Confirmation instructions (area summary, radius and its
+        bounds) plus the confirmation image (JPEG or PNG) on success;
         ``invalid_radius``/``invalid_coordinates``/``error`` instructions
         (no image) otherwise.
 
     Side effects:
         On success, sets ``candidate_properties`` (one ``buffer_area``
-        feature) and ``registration_state = "pending"``. On any failure the
-        session state is left untouched.
+        feature) and ``registration_state = "pending"``. The image and the
+        result text are built before the session is touched, so any failure
+        (geometry, rendering, summary or template) leaves the session state
+        untouched.
     """
     tool_key = "start_buffer_registration_by_coordinate"
     log_debug(f"{tool_key}: lat={latitude}, lon={longitude}, radius={radius}")
@@ -150,21 +184,16 @@ def start_buffer_registration_by_coordinate(
         if invalid is not None:
             return invalid
 
-        buffer_area, img_bytes = _register_buffer_candidate(run_context, latitude, longitude, radius)
+        buffer_area, rendered, content = _build_buffer_candidate(latitude, longitude, radius)
+        image = Image(content=rendered.content, format=rendered.format, mime_type=rendered.mime_type)
 
-        log_debug(f"{tool_key}: area generated ({buffer_area.id}, {radius} m)")
-        return ToolResult(
-            content=get_tool_result_text(
-                "property_tools", tool_key, "confirm_buffer_area",
-                area_details=f"> {buffer_area.describe()}",
-                radius=radius, default_radius=_DEFAULT_RADIUS_METERS,
-                min_radius=_MIN_RADIUS_METERS, max_radius=_MAX_RADIUS_METERS,
-            ),
-            images=[Image(content=img_bytes, format="png", mime_type="image/png")],
-        )
-    except Exception as e:
-        log_error(f"{tool_key}: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", tool_key, "error", error=e))
+        run_context.session_state["candidate_properties"] = [buffer_area.model_dump()]
+        run_context.session_state["registration_state"] = "pending"
+
+        log_debug(f"{tool_key}: area generated ({buffer_area.id}, {radius} m, {rendered.format})")
+        return ToolResult(content=content, images=[image])
+    except Exception:
+        return _unexpected_error(tool_key)
 
 
 def _persist_registration(run_context: RunContext, candidate_properties: list, name: str) -> ToolResult:
@@ -181,11 +210,18 @@ def _persist_registration(run_context: RunContext, candidate_properties: list, n
         name (str): User-chosen display name.
 
     Returns:
-        ToolResult: The ``complete_registration.results.registration_complete`` text.
+        ToolResult: The ``complete_registration.results.registration_complete``
+        text (name and area summary; no internal id).
 
     Side effects:
-        Appends the named feature to ``session_state["all_properties"]`` and
-        resets ``registration_state`` and ``candidate_properties`` to None.
+        Appends the named feature to ``session_state["all_properties"]``,
+        resets ``registration_state`` to None and ``candidate_properties`` to
+        ``[]``. The result text is built before any write, so a failure
+        (invalid candidate, summary or template error) leaves the session
+        state untouched.
+
+    Raises:
+        Exception: Propagated to the calling tool, which returns ``error``.
     """
     candidate = Feature.model_validate(candidate_properties[0])
     metadata = [entry for entry in candidate.metadata if entry.key != "name"]
@@ -194,19 +230,17 @@ def _persist_registration(run_context: RunContext, candidate_properties: list, n
 
     registered_features = get_registered_features(run_context.session_state)
     registered_features.features.append(registered_feature)
-    set_registered_features(run_context.session_state, registered_features)
+    content = get_tool_result_text(
+        "property_tools", "complete_registration", "registration_complete",
+        name=name, area_details=summarize_feature(registered_feature),
+    )
 
+    set_registered_features(run_context.session_state, registered_features)
     run_context.session_state["registration_state"] = None
-    run_context.session_state["candidate_properties"] = None
+    run_context.session_state["candidate_properties"] = []
 
     log_debug(f"_persist_registration: registration complete ({registered_feature.id})")
-    return ToolResult(
-        content=get_tool_result_text(
-            "property_tools", "complete_registration", "registration_complete",
-            name=name, feature_id=registered_feature.id,
-            area_details=registered_feature.describe(),
-        )
-    )
+    return ToolResult(content=content)
 
 
 @tool(description=get_tool_description("property_tools", "confirm_registration"))
@@ -230,6 +264,9 @@ def confirm_registration(run_context: RunContext, name: Optional[str] = None):
         Without name: sets ``registration_state = "final"``. With name: see
         ``_persist_registration``. With no candidate: resets a stale
         ``registration_state`` to None and ``candidate_properties`` to ``[]``.
+        The candidate is validated and the result text built before any
+        write, so an invalid candidate or a summary failure leaves the
+        session state untouched (``error`` is returned).
     """
     log_debug(f"confirm_registration: name={name}")
     try:
@@ -243,20 +280,19 @@ def confirm_registration(run_context: RunContext, name: Optional[str] = None):
         if name:
             return _persist_registration(run_context, candidate_properties, name)
 
+        candidate = Feature.model_validate(candidate_properties[0])
+        content = get_tool_result_text(
+            "property_tools", "confirm_registration", "confirmed_prompt_name",
+            area_details=summarize_feature(candidate),
+        )
+
         run_context.session_state["registration_state"] = "final"
         run_context.session_state["candidate_properties"] = [candidate_properties[0]]
 
-        feature_id = Feature.model_validate(candidate_properties[0]).id
-        log_debug(f"confirm_registration: area {feature_id} confirmed")
-        return ToolResult(
-            content=get_tool_result_text(
-                "property_tools", "confirm_registration", "confirmed_prompt_name",
-                feature_id=feature_id,
-            )
-        )
-    except Exception as e:
-        log_error(f"confirm_registration: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "confirm_registration", "error", error=e))
+        log_debug(f"confirm_registration: area {candidate.id} confirmed")
+        return ToolResult(content=content)
+    except Exception:
+        return _unexpected_error("confirm_registration")
 
 
 @tool(description=get_tool_description("property_tools", "complete_registration"))
@@ -284,9 +320,8 @@ def complete_registration(run_context: RunContext, name: str):
             run_context.session_state["candidate_properties"] = []
             return ToolResult(content=get_tool_result_text("property_tools", "complete_registration", "no_pending_area"))
         return _persist_registration(run_context, candidate_properties, name)
-    except Exception as e:
-        log_error(f"complete_registration: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "complete_registration", "error", error=e))
+    except Exception:
+        return _unexpected_error("complete_registration")
 
 
 @tool(description=get_tool_description("property_tools", "cancel_registration"))
@@ -300,14 +335,13 @@ def cancel_registration(run_context: RunContext):
         ToolResult: The ``cancelled`` text, or ``error``.
 
     Side effects:
-        Resets ``registration_state`` and ``candidate_properties`` to None;
-        ``all_properties`` is never touched.
+        Resets ``registration_state`` to None and ``candidate_properties``
+        to ``[]``; ``all_properties`` is never touched.
     """
     log_debug("cancel_registration")
     try:
         run_context.session_state["registration_state"] = None
-        run_context.session_state["candidate_properties"] = None
+        run_context.session_state["candidate_properties"] = []
         return ToolResult(content=get_tool_result_text("property_tools", "cancel_registration", "cancelled"))
-    except Exception as e:
-        log_error(f"cancel_registration: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "cancel_registration", "error", error=e))
+    except Exception:
+        return _unexpected_error("cancel_registration")

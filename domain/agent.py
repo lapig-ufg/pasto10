@@ -19,7 +19,7 @@ from domain.tools.property_tools import (
     confirm_registration,
     start_buffer_registration_by_coordinate,
 )
-from domain.utils.feature_utils import get_registered_features
+from domain.utils.feature_utils import get_registered_features, summarize_feature
 
 _agent_config = get_agent_config("single_agent")
 
@@ -56,11 +56,26 @@ def get_tools(run_context: RunContext) -> list:
 
 
 def _registrations_text(session_state) -> str:
-    """Returns the registered-areas prompt block, or the ``registrations_empty`` text."""
-    prompt = get_registered_features(session_state).build_prompt()
-    if prompt:
-        return prompt
-    return _agent_config["registrations_empty"].strip()
+    """Builds the body of the ``<registrations>`` block of the default state.
+
+    One line per registered feature, ``"- {name}: {summary}"``, where the
+    name is the user-chosen display name (``feature_type_fallback`` when
+    unnamed) and the summary comes from ``summarize_feature``. No feature
+    ids, neutral type keys or type tags are included, since the model could
+    echo them to the user.
+
+    Args:
+        session_state (dict): The run's session state.
+
+    Returns:
+        str: The lines of registered areas, or the ``registrations_empty``
+        text when nothing is registered.
+    """
+    features = get_registered_features(session_state).features
+    if not features:
+        return _agent_config["registrations_empty"].strip()
+    fallback_name = _agent_config["feature_type_fallback"].strip()
+    return "\n".join(f"- {feature.name or fallback_name}: {summarize_feature(feature)}" for feature in features)
 
 
 def _feature_type_text(candidate_properties: list[Feature]) -> str:
@@ -82,9 +97,10 @@ def get_instructions(run_context: RunContext) -> str:
     """Builds the agent instructions for the current registration state.
 
     - ``"pending"``: context blocks + ``instructions_pending_single`` with the
-      candidate description and its feature type name.
+      candidate summary (``candidate_summary`` template, see
+      ``summarize_feature``) and its feature type name.
     - ``"final"``: context blocks + ``instructions_final`` (candidate
-      description, or ``final_candidate_fallback`` when missing).
+      summary, or ``final_candidate_fallback`` when missing).
     - otherwise: context blocks + ``<user-persona>`` + ``<registrations>``
       (registered areas or ``registrations_empty``) + ``instructions_default``.
 
@@ -104,7 +120,7 @@ def get_instructions(run_context: RunContext) -> str:
 
     if registration_state == "pending":
         candidates = _candidate_features(session_state)
-        candidate_text = str(candidates[0]) if candidates else _agent_config["final_candidate_fallback"].strip()
+        candidate_text = summarize_feature(candidates[0]) if candidates else _agent_config["final_candidate_fallback"].strip()
         state_text = _agent_config["instructions_pending_single"].strip().format(
             candidate_text=candidate_text, feature_type=_feature_type_text(candidates),
         )
@@ -112,7 +128,7 @@ def get_instructions(run_context: RunContext) -> str:
 
     elif registration_state == "final":
         candidates = _candidate_features(session_state)
-        candidate_text = str(candidates[0]) if candidates else _agent_config["final_candidate_fallback"].strip()
+        candidate_text = summarize_feature(candidates[0]) if candidates else _agent_config["final_candidate_fallback"].strip()
         state_text = _agent_config["instructions_final"].strip().format(
             candidate_text=candidate_text, feature_type=_feature_type_text(candidates),
         )
