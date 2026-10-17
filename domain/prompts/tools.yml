@@ -1,0 +1,119 @@
+# =============================================================================
+# Tool descriptions (runtime source of truth).
+#
+# Grouped by component (tool file), then by tool function name. Each entry has
+# a `description` tag passed to the `@tool(description=...)` decorator. These
+# override the neutral English defaults shipped by Semente
+# (semente/configs/prompts/defaults/tools.yml).
+#
+# Only the framework's generic tools are listed for now; Pasto10 domain tools
+# (Global Pasture Watch / Time2Graze analyses) get their own component here as
+# they are added under domain/tools/.
+# =============================================================================
+
+tts_tools:
+  generate_speech:
+    description: |
+      Generates spoken audio (text-to-speech) from a provided text.
+
+      WHEN TO USE:
+      - Call this tool ONLY when the user explicitly requests an audio or voice response.
+      - Call this tool if the current session or the system preference requires audio responses.
+
+      Args:
+          text (str): The full text content to be spoken.
+
+      Returns:
+          ToolResult: Result object containing the generated speech.
+
+onboarding_tools:
+  accept_terms_and_conditions:
+    description: |
+      Records the user's formal acceptance of the Pasto10 Terms and Conditions in the database.
+
+      Use when the user clearly accepts the terms (e.g. "I accept", "yes", "I agree").
+
+version_tools:
+  consult_update_notes:
+    description: |
+      Reads and returns the release notes (patch notes) of the Pasto10 system.
+      Use this tool when the user asks about the current version, news or updates.
+
+feedback_tools:
+  record_frustration_feedback:
+    description: |
+      Records a user correction when the assistant provides an incorrect answer.
+      Use this function strictly when the following sequence of events occurs:
+      1. The user asks a question.
+      2. The assistant answers.
+      3. The user complains about the answer.
+      4. The assistant asks the user to explain what the correct answer would be.
+      5. The user provides the answer.
+
+      Args:
+          reason_frustration (str): Why the user was frustrated.
+          desired_answer (str): The answer the user expected.
+  record_analisys_feedback:
+    description: |
+      Records a suggestion for a new feature or data analysis.
+      Use when the user requests an analysis the assistant does not yet have tools to generate.
+
+      Args:
+          original_question (str): The user's original request.
+          desired_analysis (str): The analysis the user would like to see.
+
+persona_tools:
+  update_persona_name:
+    description: |
+      Organically updates the user's name in the session persona (profile).
+
+      Use this tool only when the user informs or confirms their name naturally
+      during the conversation.
+
+      Args:
+          name (str): The user's first name (e.g. "John", "Maria").
+  update_persona_role:
+    description: |
+      Organically updates the user's professional role in the session persona.
+
+      Use this tool when you clearly identify whether the user is a rancher/producer
+      or a technical advisor/agronomist.
+
+      Args:
+          role (str): Exactly "Produtor" for a rancher/producer, or "Técnico" for a
+              technical advisor/agronomist (these are the only accepted values).
+  update_persona_region:
+    description: |
+      Organically updates the user's region/location in the session persona.
+
+      Use this tool when the user mentions the city, state, province, country or
+      region where they operate.
+
+      Args:
+          regionality (str): The user's city, region or country (e.g. "Mato Grosso, Brazil", "Queensland, Australia").
+  create_persona_preference:
+    description: |
+      Adds a new preference, interest or behavior discovered about the user.
+
+      Use this tool subtly whenever you notice a taste, routine or preference of the user.
+      Avoid duplicating existing keys. If the key already exists, use 'update_persona_preference'.
+
+      Args:
+          key (str): A short lowercase keyword identifying the category (e.g. "livestock", "grazing_system", "contact_time").
+          description (str): Details about the user's taste or behavior in that category.
+  update_persona_preference:
+    description: |
+      Updates an existing preference or behavior in the user's persona.
+
+      Use this tool when the user changes their mind or brings new information
+      about a point that was previously mapped.
+
+      Args:
+          key (str): The exact keyword of the preference to update (e.g. "livestock").
+          description (str): The new description that replaces the previous one.
+  remove_persona_preference:
+    description: |
+      Removes a specific preference from the user's profile when it is no longer valid.
+
+      Args:
+          key (str): The keyword of the preference to remove.
