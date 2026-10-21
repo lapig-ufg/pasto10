@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "earthengine-api==1.7.4",
     "pillow>=12.3.0",
     "requests>=2.34.2",
     "semente-agents",
@@ -21,3 +22,5 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+addopts = "-m 'not e2e'"
+markers = ["e2e: real Earth Engine and network calls; needs GEE_* variables (run with -m e2e)"]

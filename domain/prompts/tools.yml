@@ -208,3 +208,76 @@ property_tools:
         The registration was cancelled and nothing was saved. If the user asked for a different radius or location, repeat the new value back and ask them to confirm so the new area can be generated; otherwise, let them know briefly that they can send a new coordinate (and radius) whenever they want to register an area.
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+
+pasture_tools:
+  generate_pasture_map:
+    description: |
+      Generates a map of the pasture inside a registered area, drawn over satellite imagery.
+
+      Use this tool when the user asks to see the pasture, a pasture map or where the grasslands are
+      in one of their registered areas. If the user names an area, pass it in `area_name`; if not, the
+      latest registered area is used. If the user asks for a specific year, pass it in `year`.
+      The default year is 2022, the latest Global Pasture Watch map; pass a later year only when the user asks
+      for it, which returns an experimental on-the-fly estimate.
+      The map distinguishes cultivated grassland from natural/semi-natural grassland.
+
+      Args:
+          area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
+          year (int, optional): Reference year. When omitted, 2022 (the latest Global Pasture Watch year) is used. Years after 2022 give an experimental estimate.
+
+      Returns:
+          ToolResult: The map image and the pasture figures of the area.
+    results:
+      success: |
+        Pasture analysis of "{area_name}" for {year} (source: {source}):
+        - Pasture (cultivated + natural/semi-natural): {pasture_ha} ha ({pasture_percent}% of the {area_ha} ha analyzed)
+        - Cultivated grassland: {cultivated_ha} ha
+        - Natural/semi-natural grassland: {natural_ha} ha
+        The map image was sent to the user. Describe it briefly: state the year and the data source,
+        and give the pasture area in hectares. Remember that this is satellite-derived and does not replace field verification.
+        If the source is the Pasto10 classification, this is an experimental estimate, not an official map and not a measurement: state that clearly, present the figures only as an order of magnitude, say that it can diverge a lot from one year to the next and from the official map (differences observed in tests reached several times the value), do not compare it with earlier years as a trend, and recommend 2022 (the latest Global Pasture Watch year) as the reliable reference.
+      no_registered_area: |
+        The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
+      area_not_found: |
+        No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
+      year_unavailable: |
+        There is no pasture data for the requested year. Tell the user that data is available from {first_year} to {latest_year} (years after 2022 are estimates produced by Pasto10, not official maps) and ask which year they would like.
+      earth_engine_unavailable: |
+        The satellite data service is temporarily unavailable. Apologize, say you cannot produce this result right now and do NOT present any figures or maps; suggest trying again later.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  get_pasture_area:
+    description: |
+      Measures how many hectares of pasture exist inside a registered area.
+
+      Use this tool when the user asks how much pasture, grassland or pastureland an area has
+      (total, cultivated or natural). If the user names an area, pass it in `area_name`; if not, the
+      latest registered area is used. If the user asks for a specific year, pass it in `year`.
+      The default year is 2022, the latest Global Pasture Watch map; pass a later year only when the user asks
+      for it, which returns an experimental on-the-fly estimate.
+
+      Args:
+          area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
+          year (int, optional): Reference year. When omitted, 2022 (the latest Global Pasture Watch year) is used. Years after 2022 give an experimental estimate.
+
+      Returns:
+          ToolResult: Pasture area in hectares (total, cultivated and natural/semi-natural) for the year.
+    results:
+      success: |
+        Pasture analysis of "{area_name}" for {year} (source: {source}):
+        - Pasture (cultivated + natural/semi-natural): {pasture_ha} ha ({pasture_percent}% of the {area_ha} ha analyzed)
+        - Cultivated grassland: {cultivated_ha} ha
+        - Natural/semi-natural grassland: {natural_ha} ha
+        Report the figures to the user in plain language, always stating the year and the data source.
+        Remember that this is satellite-derived and does not replace field verification.
+        If the source is the Pasto10 classification, this is an experimental estimate, not an official map and not a measurement: state that clearly, present the figures only as an order of magnitude, say that it can diverge a lot from one year to the next and from the official map (differences observed in tests reached several times the value), do not compare it with earlier years as a trend, and recommend 2022 (the latest Global Pasture Watch year) as the reliable reference.
+      no_registered_area: |
+        The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
+      area_not_found: |
+        No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
+      year_unavailable: |
+        There is no pasture data for the requested year. Tell the user that data is available from {first_year} to {latest_year} (years after 2022 are estimates produced by Pasto10, not official maps) and ask which year they would like.
+      earth_engine_unavailable: |
+        The satellite data service is temporarily unavailable. Apologize, say you cannot produce this result right now and do NOT present any figures or maps; suggest trying again later.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.

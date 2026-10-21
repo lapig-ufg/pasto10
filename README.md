@@ -6,7 +6,7 @@
 
 ## About
 
-Pasto10 is a decision-support system that combines multi-agent AI with satellite-based pasture maps to help Brazilian ranchers monitor, diagnose, and improve their pasturelands. Instead of navigating dashboards and map layers, users converse with an assistant that interprets the data for them, answers questions about specific properties or municipalities, and turns map indicators into practical management recommendations.
+Pasto10 is a decision-support system that combines multi-agent AI with satellite-based pasture maps to help ranchers and pasture managers around the world monitor, diagnose, and improve their pasturelands. Instead of navigating dashboards and map layers, users converse with an assistant that interprets the data for them, answers questions about specific properties or municipalities, and turns map indicators into practical management recommendations.
 
 The project is a **showcase and reference implementation of [Semente](https://github.com/lapig-ufg/semente)**, the multi-agent AI chat framework for land use and agriculture. Just as Pasto Legal (LAPIG/UFG's WhatsApp assistant for pasture diagnostics) was the seed from which Semente was extracted, Pasto10 demonstrates how the framework grows into a new domain — in this case, one grounded in Global Pasture Watch and Time2Graze map products.
 
@@ -17,13 +17,42 @@ Pasto10's knowledge comes from maps produced in the context of two initiatives:
 - **Global Pasture Watch** — a global collaboration delivering the first open, satellite-derived maps of pastureland extent, condition, and productivity. These layers tell us where pastures are and how degraded or vigorous they are.
 - **Time2Graze** — an initiative advancing temporal analysis of grazing lands, including pasture dynamics over time series that support management decisions.
 
+Pasto10 reads these maps through Google Earth Engine:
+
+| Years | Source | How it is used |
+| --- | --- | --- |
+| 2000-2022 | Global Pasture Watch grassland classes (`ggc-30m/v1/grassland_c`, 30 m) | Used as published: cultivated grassland, natural/semi-natural grassland and non-grassland. |
+| After 2022 | [Google Satellite Embedding](https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_SATELLITE_EMBEDDING_V1_ANNUAL) (AlphaEarth, 10 m) | No published map exists yet: a Random Forest (100 trees, 300 samples per class, fixed seed) is trained on the fly with the 2022 Global Pasture Watch classes (`ggc-30m/v1-1`) and applied to the embedding of the requested year. The result is an estimate, not an official map and can vary strongly from year to year. |
+
+Cells that Global Pasture Watch leaves without data (water, bare ground, dense urban areas) are counted as non-grassland, so the analyzed area equals the whole registered area.
+
+When no year is given the tools use 2022, the latest Global Pasture Watch map; a later year must be requested explicitly and always returns an experimental estimate. The estimate is trained once per area and cached per process, so repeated requests report the same figures until restart.
+
+Pasture area is the sum of cultivated and natural/semi-natural grassland, measured in hectares inside the registered area. Time2Graze is not yet integrated into the pasture tools. Figures for 2000-2022 (Global Pasture Watch v1) and for later years (classification trained on v1-1 / 2022, different resolution) must not be compared directly as a trend. Known limitation: the classifier is trained on a single year (2022) and applied to the embeddings of other years, so estimates after 2022 can swing widely between years (in tests, the same 1 km area varied from about 1 to 60 ha in consecutive years) and, being trained with balanced classes, tend to overestimate pasture in the training year. In tests the estimate differed from the official map and between years by several times the value. Larger or differently weighted training samples did not make it stable, so treat post-2022 figures as indicative only. Satellite-derived figures support decisions but do not replace field verification.
+
 Both map portfolios are developed with contributions from [LAPIG/UFG](https://lapig.iesa.ufg.br/), the Image Processing and Geoprocessing Laboratory of the Federal University of Goiás, which maintains this repository.
 
 ## Architecture
 
 ## Getting started
 
+Install the dependencies with `uv sync` and run the tests with `uv run pytest` (offline). The pasture tools query Google Earth Engine, so they need the `GEE_*` variables described below.
+
 ## Configuration
+
+### Google Earth Engine
+
+The pasture map and area tools need an Earth Engine project and a service account (see `.env.example`):
+
+- `GEE_PROJECT` — Google Cloud project registered for Earth Engine.
+- `GEE_SERVICE_ACCOUNT` — service account e-mail.
+- `GEE_KEY_FILE` — path to the service account JSON key (keep it out of version control).
+
+Earth Engine is initialized lazily on the first pasture request, never at import. Without these variables the tools answer that the satellite data service is unavailable.
+
+### End-to-end test
+
+`uv run pytest` skips the real Earth Engine test. With the `GEE_*` variables exported, run `uv run pytest -m e2e -s`: it analyzes a 500 m buffer at (-15.5, -47.5) for 2020 (Global Pasture Watch) and 2024 (classification), prints the timings and, when `PASTO10_E2E_OUT` points to a directory, saves the maps there.
 
 ### Basemap providers
 

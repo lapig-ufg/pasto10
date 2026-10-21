@@ -52,8 +52,15 @@ class RenderedImage:
     mime_type: str
 
 
-def _font(size: int) -> ImageFont.ImageFont:
-    """Returns Pillow's bundled scalable font at the given pixel size."""
+def load_font(size: int) -> ImageFont.ImageFont:
+    """Returns Pillow's bundled scalable font.
+
+    Args:
+        size (int): Font size in pixels.
+
+    Returns:
+        ImageFont.ImageFont: The font, shared by every image renderer.
+    """
     return ImageFont.load_default(size=size)
 
 
@@ -170,7 +177,7 @@ def _scale_bar_layout(size: Tuple[int, int], meters_per_px: float):
     margin = max(10, int(width * 0.03))
     length_m = _scale_bar_length(meters_per_px, width * 0.3)
     length_px = round(length_m / meters_per_px)
-    font = _font(max(12, int(height * 0.028)))
+    font = load_font(max(12, int(height * 0.028)))
     return margin, margin + length_px, height - margin - 6, length_m, font
 
 
@@ -233,7 +240,7 @@ def draw_corner_label(image: Image.Image, text: str) -> Image.Image:
     labeled = image.copy()
     draw = ImageDraw.Draw(labeled)
     draw.text(
-        (margin, margin), text, font=_font(max(14, int(height * 0.032))),
+        (margin, margin), text, font=load_font(max(14, int(height * 0.032))),
         fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0),
     )
     return labeled
@@ -253,7 +260,7 @@ def attribution_font_size(size: Tuple[int, int]) -> int:
 
 def _attribution_text_bbox(size: Tuple[int, int], text: str) -> Tuple[int, int, int, int]:
     """Returns the bbox of the (possibly multi-line) attribution text drawn at (0, 0)."""
-    font = _font(attribution_font_size(size))
+    font = load_font(attribution_font_size(size))
     return ImageDraw.Draw(Image.new("RGB", (1, 1))).multiline_textbbox((0, 0), text, font=font)
 
 
@@ -291,7 +298,7 @@ def draw_attribution(image: Image.Image, text: str) -> Image.Image:
     Returns:
         PIL.Image.Image: New RGB image with the attribution drawn.
     """
-    font = _font(attribution_font_size(image.size))
+    font = load_font(attribution_font_size(image.size))
     left, top, _, _ = _attribution_text_bbox(image.size, text)
     box = attribution_box(image.size, text)
 
@@ -306,7 +313,7 @@ def draw_attribution(image: Image.Image, text: str) -> Image.Image:
     return Image.alpha_composite(base, overlay).convert("RGB")
 
 
-def _encode(image: Image.Image, with_basemap: bool) -> RenderedImage:
+def encode(image: Image.Image, with_basemap: bool) -> RenderedImage:
     """Encodes the image as JPEG (over tiles) or PNG (over the neutral background)."""
     stream = BytesIO()
     if with_basemap:
@@ -370,4 +377,4 @@ def render_buffer_image(
     )
     if provider is not None:
         image = draw_attribution(image, provider.attribution)
-    return _encode(image, with_basemap=provider is not None)
+    return encode(image, with_basemap=provider is not None)

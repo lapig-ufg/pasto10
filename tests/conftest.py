@@ -6,7 +6,7 @@ semente prompts loader, which needs the app's prompts dir. At runtime
 here before any domain import.
 
 Tests never touch the network: the autouse ``offline_tiles`` fixture makes
-every basemap tile download fail, blocks any HTTP request made through
+every basemap tile download fail (except in ``e2e`` tests), blocks any HTTP request made through
 ``requests`` (``HTTPAdapter.send`` raises ``requests.ConnectionError``) and
 clears the basemap environment variables, so the default providers apply.
 Tests that need a basemap request the ``online_tiles`` fixture, which serves
@@ -39,10 +39,15 @@ def _fake_tile(provider, zoom, x, y) -> Image.Image:
 
 
 @pytest.fixture(autouse=True)
-def offline_tiles(monkeypatch):
-    """Makes every tile download and HTTP request fail; resets basemap env vars."""
+def offline_tiles(request, monkeypatch):
+    """Makes every tile download and HTTP request fail; resets basemap env vars.
+
+    Tests marked ``e2e`` keep the real network.
+    """
     from domain.services.geospatial import basemap
 
+    if request.node.get_closest_marker("e2e"):
+        return
     monkeypatch.setattr(basemap, "fetch_tile", _offline_fetch)
     monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", _blocked_send)
     monkeypatch.delenv(basemap.PROVIDERS_ENV, raising=False)

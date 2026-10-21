@@ -99,3 +99,34 @@ def summarize_feature(feature: Feature) -> str:
         )
     except (KeyError, ValueError, IndexError):
         return _safe_summary(feature, config)
+
+
+def find_registered_feature(session_state, area_name: str | None = None) -> Feature | None:
+    """Finds a registered feature by its display name.
+
+    Matching is case-insensitive and ignores surrounding spaces: an exact
+    name wins; otherwise a name that is contained in exactly one registered
+    name matches. Without a name the most recently registered feature is
+    returned. Read-only.
+
+    Args:
+        session_state (dict): The run's session state.
+        area_name (str | None): Display name chosen by the user, or None for
+            the latest registered area.
+
+    Returns:
+        Feature | None: The matching feature, or None when nothing is
+        registered or no (unique) registered area matches the name.
+    """
+    features = get_registered_features(session_state).features
+    if not features:
+        return None
+    wanted = (area_name or "").strip().casefold()
+    if not wanted:
+        return features[-1]
+
+    exact = [feature for feature in features if (feature.name or "").strip().casefold() == wanted]
+    if exact:
+        return exact[-1]
+    partial = [feature for feature in features if wanted in (feature.name or "").casefold()]
+    return partial[0] if len(partial) == 1 else None

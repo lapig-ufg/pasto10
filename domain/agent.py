@@ -19,6 +19,7 @@ from domain.tools.property_tools import (
     confirm_registration,
     start_buffer_registration_by_coordinate,
 )
+from domain.tools.pasture_tools import generate_pasture_map, get_pasture_area
 from domain.utils.feature_utils import get_registered_features, summarize_feature
 
 _agent_config = get_agent_config("single_agent")
@@ -36,8 +37,9 @@ def get_tools(run_context: RunContext) -> list:
       (``confirm_registration``, ``cancel_registration``).
     - ``"final"``: the user must name the confirmed area
       (``complete_registration``, ``cancel_registration``).
-    - otherwise (default): a new area can be registered
-      (``start_buffer_registration_by_coordinate``).
+    - otherwise (default): a new area can be registered and registered areas analyzed
+      (``start_buffer_registration_by_coordinate``, ``generate_pasture_map``,
+      ``get_pasture_area``).
 
     Args:
         run_context (RunContext): The run context holding ``session_state``.
@@ -52,7 +54,7 @@ def get_tools(run_context: RunContext) -> list:
         return [confirm_registration, cancel_registration]
     if registration_state == "final":
         return [complete_registration, cancel_registration]
-    return [start_buffer_registration_by_coordinate]
+    return [start_buffer_registration_by_coordinate, generate_pasture_map, get_pasture_area]
 
 
 def _registrations_text(session_state) -> str:

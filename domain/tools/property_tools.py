@@ -11,18 +11,20 @@ errors are logged in full and the model only gets a generic message.
 """
 
 import math
-import traceback
 from typing import Optional
 
 from semente import Context as RunContext
 from semente import Image, ToolResult, tool
-from semente.logging import log_debug, log_error, log_warning
+from semente.logging import log_debug, log_warning
 from semente.configs.prompts import get_tool_description, get_tool_result_text
 
 from domain.schemas.feature import Feature, FeatureMetadata
 from domain.services.geospatial.geometry import build_buffered_area
 from domain.services.geospatial.image import RenderedImage, render_buffer_image
 from domain.utils.feature_utils import get_registered_features, set_registered_features, summarize_feature
+from domain.utils.tool_utils import unexpected_error
+
+_COMPONENT = "property_tools"
 
 # Bounds of the buffer radius accepted by the buffer registration tool (meters).
 _MIN_RADIUS_METERS = 50
@@ -31,23 +33,6 @@ _DEFAULT_RADIUS_METERS = 200
 # Web Mercator basemaps do not cover the poles; ±85° keeps the image meaningful.
 _MAX_ABS_LATITUDE = 85
 _MAX_ABS_LONGITUDE = 180
-
-
-def _unexpected_error(tool_key: str) -> ToolResult:
-    """Logs the exception being handled and returns the tool's generic error text.
-
-    Must be called from an ``except`` block. The full traceback goes to the
-    error log only; the model receives the ``results.error`` text of the
-    tool, which carries no exception details.
-
-    Args:
-        tool_key (str): Tool name under ``property_tools`` in ``tools.yml``.
-
-    Returns:
-        ToolResult: The ``error`` instructions.
-    """
-    log_error(f"{tool_key}: unexpected error\n{traceback.format_exc()}")
-    return ToolResult(content=get_tool_result_text("property_tools", tool_key, "error"))
 
 
 def _validate_buffer_radius(radius: float, tool_key: str) -> ToolResult | None:
@@ -193,7 +178,7 @@ def start_buffer_registration_by_coordinate(
         log_debug(f"{tool_key}: area generated ({buffer_area.id}, {radius} m, {rendered.format})")
         return ToolResult(content=content, images=[image])
     except Exception:
-        return _unexpected_error(tool_key)
+        return unexpected_error(_COMPONENT, tool_key)
 
 
 def _persist_registration(run_context: RunContext, candidate_properties: list, name: str) -> ToolResult:
@@ -292,7 +277,7 @@ def confirm_registration(run_context: RunContext, name: Optional[str] = None):
         log_debug(f"confirm_registration: area {candidate.id} confirmed")
         return ToolResult(content=content)
     except Exception:
-        return _unexpected_error("confirm_registration")
+        return unexpected_error(_COMPONENT, "confirm_registration")
 
 
 @tool(description=get_tool_description("property_tools", "complete_registration"))
@@ -321,7 +306,7 @@ def complete_registration(run_context: RunContext, name: str):
             return ToolResult(content=get_tool_result_text("property_tools", "complete_registration", "no_pending_area"))
         return _persist_registration(run_context, candidate_properties, name)
     except Exception:
-        return _unexpected_error("complete_registration")
+        return unexpected_error(_COMPONENT, "complete_registration")
 
 
 @tool(description=get_tool_description("property_tools", "cancel_registration"))
@@ -344,4 +329,4 @@ def cancel_registration(run_context: RunContext):
         run_context.session_state["candidate_properties"] = []
         return ToolResult(content=get_tool_result_text("property_tools", "cancel_registration", "cancelled"))
     except Exception:
-        return _unexpected_error("cancel_registration")
+        return unexpected_error(_COMPONENT, "cancel_registration")

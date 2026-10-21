@@ -36,7 +36,7 @@ def test_domain_spec_wires_dynamic_callables():
 @pytest.mark.parametrize(
     "registration_state, expected",
     [
-        (None, {"start_buffer_registration_by_coordinate"}),
+        (None, {"start_buffer_registration_by_coordinate", "generate_pasture_map", "get_pasture_area"}),
         ("pending", {"confirm_registration", "cancel_registration"}),
         ("final", {"complete_registration", "cancel_registration"}),
     ],
@@ -169,3 +169,12 @@ def test_default_instructions_unnamed_registration_uses_type_fallback():
     block = _registrations_block(get_instructions(_context(**session_state)))
 
     assert block == f"- {_agent_config['feature_type_fallback'].strip()}: {summarize_feature(feature)}"
+
+
+def test_default_instructions_describe_pasture_tools_and_guard_against_invented_figures():
+    default = _agent_config["instructions_default"]
+
+    assert "generate_pasture_map" in default and "get_pasture_area" in default
+    assert "If no tool has returned data, do not present map-based figures or results." in default
+    for brazil_term in ("MapBiomas", "SICAR", "CAR "):
+        assert brazil_term not in default

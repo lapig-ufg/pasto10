@@ -188,7 +188,7 @@ def test_label_second_line_shows_radius_and_area(label_spy):
 
 
 def test_middle_dot_glyph_is_rendered_by_the_label_font():
-    font = image._font(17)
+    font = image.load_font(17)
     missing_glyph = font.getmask("\ue000").getbbox()
 
     assert font.getmask("·").getbbox() not in (None, missing_glyph)
