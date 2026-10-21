@@ -6,9 +6,10 @@
 # override the neutral English defaults shipped by Semente
 # (semente/configs/prompts/defaults/tools.yml).
 #
-# Only the framework's generic tools are listed for now; Pasto10 domain tools
-# (Global Pasture Watch / Time2Graze analyses) get their own component here as
-# they are added under domain/tools/.
+# The framework's generic tools come first; Pasto10 domain tools get their own
+# component (named after the file under domain/tools/). Domain tools also carry
+# a `results` mapping: the instruction texts each tool returns to the model,
+# rendered with str.format placeholders (e.g. {radius}).
 # =============================================================================
 
 tts_tools:
@@ -117,3 +118,93 @@ persona_tools:
 
       Args:
           key (str): The keyword of the preference to remove.
+
+property_tools:
+  start_buffer_registration_by_coordinate:
+    description: |
+      Starts the registration of a new circular area (buffer) around a point,
+      given its coordinate and a radius in meters.
+
+      Use this tool when the user gives a coordinate (latitude/longitude) of a
+      place they want to monitor and agrees to register the area around it.
+      If the user explicitly asks to register an area and gives the
+      coordinate, call this tool right away, without asking for agreement first.
+      The area is generated locally; no external registry is queried.
+
+      Coordinates must be in decimal degrees. Convert a coordinate given in
+      degrees, minutes and seconds (DMS) before calling: decimal = |D| + M/60 + S/3600,
+      then make it negative for S/W (or when D is already negative). Minutes may
+      also come as decimals (e.g. 15°30.5'S). Examples: 15°30'0"S 47°30'0"W -> -15.5, -47.5;
+      -15°30'0" -> -15.5.
+
+      Args:
+          latitude (float): Latitude of the center point in decimal degrees (between -85 and 85).
+          longitude (float): Longitude of the center point in decimal degrees (between -180 and 180).
+          radius (int): Buffer radius in meters (50 to 1000). Default: 200.
+
+      Returns:
+          ToolResult: Confirmation image of the area and instructions for the next step.
+    results:
+      invalid_radius: |
+        The radius of {radius} m is not accepted. Apologize to the user and explain that the radius must be between {min_radius} and {max_radius} meters, then ask for a radius within that range.
+      invalid_coordinates: |
+        The coordinate ({latitude}, {longitude}) is not valid. Apologize to the user and explain that the latitude must be between -{max_latitude} and {max_latitude} degrees and the longitude between -180 and 180 degrees (decimal degrees), then ask for the coordinate again.
+      confirm_buffer_area: |
+        The area image was sent to the user. Ask the user whether the following area is the correct one:
+        > {area_details}
+        Mention that the radius is {radius} m and that they can choose another radius between {min_radius} and {max_radius} m (default: {default_radius} m).
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  confirm_registration:
+    description: |
+      Confirms the pending area shown in the image.
+
+      Use this tool when the user confirms the area is correct (e.g. "yes", "that's it").
+
+      If the user also gives the desired name IN THE SAME message as the
+      confirmation (e.g. "Yes, call it North Paddock"), pass that name in the
+      `name` parameter — the registration is then completed immediately,
+      without waiting for another turn.
+
+      Args:
+          name (str, optional): Name for the area, only when the user already gave one.
+    results:
+      no_pending_area: |
+        There is no area pending confirmation. Ask the user for the coordinate of the area they want to register first.
+      confirmed_prompt_name: |
+        The area was confirmed:
+        > {area_details}
+        Ask the user what name they would like to give this area to complete the registration.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  complete_registration:
+    description: |
+      Completes the registration of the confirmed area with the name chosen by the user.
+
+      Use this tool when the user tells you the name of the area.
+
+      Args:
+          name (str): The name chosen by the user for the area.
+    results:
+      no_pending_area: |
+        There is no area pending registration. Ask the user for the coordinate of the area they want to register first.
+      registration_complete: |
+        Area registered successfully.
+        Name: {name}
+        Details: {area_details}
+
+        Tell the user, in one short message, that the area was registered with this name.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  cancel_registration:
+    description: |
+      Cancels the pending registration.
+
+      Use this tool if the user says the area shown in the image is NOT the
+      correct one, wants a different location or radius, or wants to cancel
+      the registration.
+    results:
+      cancelled: |
+        The registration was cancelled and nothing was saved. If the user asked for a different radius or location, repeat the new value back and ask them to confirm so the new area can be generated; otherwise, let them know briefly that they can send a new coordinate (and radius) whenever they want to register an area.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
