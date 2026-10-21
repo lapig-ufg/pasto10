@@ -13,4 +13,4 @@ def get_tools(context: Context):
 
 
 def get_instructions(context: Context):
-    return _agent_config.get("default")
+    return _agent_config.get("instructions_default")
