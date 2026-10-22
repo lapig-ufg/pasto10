@@ -68,3 +68,19 @@ def test_unexpected_error_returns_generic_text_without_details():
 
     assert isinstance(result, ToolResult)
     assert "unexpected error" in result.content and "secret detail" not in result.content
+
+
+def test_area_label_and_lookup_area_are_shared_by_the_tools():
+    from semente.backends.toolkit import StateContext
+
+    from domain.utils.tool_utils import area_label, lookup_area
+
+    state, features = _state("North Paddock", None)
+    context = StateContext(session_state=state)
+
+    assert area_label(features[0]) == "North Paddock" and area_label(features[1]) != ""
+    found, failure = lookup_area(context, "north", "pasture_tools", "get_pasture_area")
+    assert failure is None and found.feature_id == features[0].feature_id
+    _, unknown = lookup_area(context, "lake", "pasture_tools", "get_pasture_area")
+    _, empty = lookup_area(StateContext(session_state={}), None, "biomass_tools", "get_biomass_total")
+    assert "lake" in unknown.content and "no registered area" in empty.content

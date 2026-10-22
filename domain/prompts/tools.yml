@@ -307,7 +307,7 @@ biomass_tools:
         Dry-matter production of the pasture of "{area_name}", period {period} ({start} to {end}, {days} days), source: {source}.
         - Mean: {mean_t_ha} t DM/ha
         - Total: {total_t} t DM over {pasture_ha} ha of productive pasture ({pasture_percent}% of the {area_ha} ha analyzed)
-        The map image was sent to the user. State the period and source, explain that these are accumulated dry-matter production estimates of the period (not standing biomass or available forage, and not a stocking capacity), and that they are approximate (a general conversion, calibrated for cultivated tropical pastures; elsewhere only an order of magnitude). Never compare annual with monthly figures, nor Global Pasture Watch with Time2Graze figures. Satellite estimates do not replace field verification.
+        The map image was sent to the user. State the period and source, explain that these are accumulated dry-matter production estimates of the period (not standing biomass or available forage, and not a stocking capacity unless following the ua-calculator skill), and that they are approximate (a general conversion, calibrated for cultivated tropical pastures; elsewhere only an order of magnitude). Never compare annual with monthly figures, nor Global Pasture Watch with Time2Graze figures. Satellite estimates do not replace field verification.
       note_mask_year: |
         The pasture mask is the Global Pasture Watch grassland map of {mask_year}, the latest available, older than {year}: mention it briefly.
       note_time2graze: |
@@ -352,7 +352,7 @@ biomass_tools:
         Dry-matter production of the pasture of "{area_name}", period {period} ({start} to {end}, {days} days), source: {source}.
         - Mean: {mean_t_ha} t DM/ha
         - Total: {total_t} t DM over {pasture_ha} ha of productive pasture ({pasture_percent}% of the {area_ha} ha analyzed)
-        Report the figures in plain language, always stating the period and the source. Explain that these are accumulated dry-matter production estimates of the period (not standing biomass or available forage, and not a stocking capacity), and that they are approximate (a general conversion, calibrated for cultivated tropical pastures; elsewhere only an order of magnitude). Never compare annual with monthly figures, nor Global Pasture Watch with Time2Graze figures. Satellite estimates do not replace field verification.
+        Report the figures in plain language, always stating the period and the source. Explain that these are accumulated dry-matter production estimates of the period (not standing biomass or available forage, and not a stocking capacity unless following the ua-calculator skill), and that they are approximate (a general conversion, calibrated for cultivated tropical pastures; elsewhere only an order of magnitude). Never compare annual with monthly figures, nor Global Pasture Watch with Time2Graze figures. Satellite estimates do not replace field verification.
       note_mask_year: |
         The pasture mask is the Global Pasture Watch grassland map of {mask_year}, the latest available, older than {year}: mention it briefly.
       note_time2graze: |
@@ -371,5 +371,154 @@ biomass_tools:
         The area "{area_name}" has no productive pasture according to the Global Pasture Watch grassland map, so there is no dry-matter production to report. Tell the user and do NOT present any figures.
       earth_engine_unavailable: |
         The satellite data service is temporarily unavailable. Apologize, say you cannot produce this result right now and do NOT present any figures or maps; suggest trying again later.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+
+weather_tools:
+  get_monthly_precipitation_forecast:
+    description: |
+      Retrieves the seasonal precipitation forecast (mm per month) for a registered area, current month first.
+
+      Use this tool when the user asks about expected rain in the coming months. If the user names an area,
+      pass it in `area_name`; if not, the latest registered area is used.
+
+      Args:
+          area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
+          months (int, optional): Number of months, between 1 and 7. Defaults to 7.
+
+      Returns:
+          ToolResult: Monthly mean precipitation (mm) from the seasonal forecast.
+    results:
+      success: |
+        Monthly precipitation forecast for "{area_name}" (timezone {timezone}), {count} month(s), current month first:
+        {lines}
+        Seasonal forecasts have low skill: present these as a rough tendency, not a prediction. Weather data by Open-Meteo.com (CC-BY 4.0).
+      line: |
+        - {month}: {mm} mm
+      service_unavailable: |
+        The weather service is temporarily unavailable. Apologize, say you cannot get this forecast right now and do NOT present any weather figures; suggest trying again later.
+      no_registered_area: |
+        The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
+      area_not_found: |
+        No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  get_daily_precipitation_forecast:
+    description: |
+      Retrieves the precipitation forecast (mm) of one future day for a registered area, as the ensemble median and
+      quartiles (Q1 to Q3). The forecast reaches about 33 days ahead.
+
+      Use this tool when the user asks about rain on a specific day. If the user names an area, pass it in
+      `area_name`; if not, the latest registered area is used.
+
+      Args:
+          area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
+          days_ahead (int, optional): Target day counted from today in the area's timezone (1 = today), up to the available horizon of about 33-34 days; larger values return horizon_exceeded. Defaults to 1.
+
+      Returns:
+          ToolResult: Median and quartiles of the precipitation of the chosen day.
+    results:
+      success: |
+        Precipitation forecast for "{area_name}" on {day} (day {days_ahead}, timezone {timezone}), ensemble of {members} members:
+        median {median} mm, interquartile range {q1} to {q3} mm.
+        Forecasts several weeks ahead are uncertain: mention the range. Weather data by Open-Meteo.com (CC-BY 4.0).
+      horizon_exceeded: |
+        The forecast for day {days_ahead} is not available: the ensemble forecast of "{area_name}" reaches only {horizon} days ahead. Tell the user this and offer a day within that horizon; do NOT invent a value.
+      service_unavailable: |
+        The weather service is temporarily unavailable. Apologize, say you cannot get this forecast right now and do NOT present any weather figures; suggest trying again later.
+      no_registered_area: |
+        The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
+      area_not_found: |
+        No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  get_rain_season_onset_forecast:
+    description: |
+      Predicts the start date of the rainy season for a registered area (demonstrative heuristic based on the seasonal
+      ensemble forecast, valid for regions with a marked wet/dry cycle).
+
+      Use this tool when the user asks when the rains will start. If the user names an area, pass it in `area_name`;
+      if not, the latest registered area is used.
+
+      Args:
+          area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
+
+      Returns:
+          ToolResult: The predicted onset date, or that the rainy season is already underway or not expected within the horizon.
+    results:
+      success: |
+        The rainy season of "{area_name}" is predicted to start around {onset_date} ({days_ahead} days ahead; rain in the last {window_days} days: {recent_mm} mm).
+        The rule used is a simple global heuristic for regions with a marked wet/dry cycle: the {window_days}-day rainfall total (median over the ensemble members) counts as wet from {wet_mm} mm and as dry below that, even between {dry_mm} and {wet_mm} mm; the rainy season starts when the total stays above {wet_mm} mm for {persistence_days} consecutive days and the dry season when it falls below {dry_mm} mm. Seasonal forecasts have low skill and this is a demonstration: say so briefly. Dates are local to the area ({timezone}); 0 days ahead means today. Weather data by Open-Meteo.com (CC-BY 4.0).
+      underway: |
+        The rainy season of "{area_name}" is already underway (rain in the last {window_days} days: {recent_mm} mm, at least {wet_mm} mm). No new start is needed within the {horizon_days}-day horizon.
+        The rule used is a simple global heuristic for regions with a marked wet/dry cycle: the {window_days}-day rainfall total (median over the ensemble members) counts as wet from {wet_mm} mm and as dry below that, even between {dry_mm} and {wet_mm} mm; the rainy season starts when the total stays above {wet_mm} mm for {persistence_days} consecutive days and the dry season when it falls below {dry_mm} mm. Seasonal forecasts have low skill and this is a demonstration: say so briefly. Dates are local to the area ({timezone}); 0 days ahead means today. Weather data by Open-Meteo.com (CC-BY 4.0).
+      not_within_horizon: |
+        No start of the rainy season is expected for "{area_name}" within the {horizon_days}-day forecast horizon (rain in the last {window_days} days: {recent_mm} mm). Do NOT invent a date.
+        The rule used is a simple global heuristic for regions with a marked wet/dry cycle: the {window_days}-day rainfall total (median over the ensemble members) counts as wet from {wet_mm} mm and as dry below that, even between {dry_mm} and {wet_mm} mm; the rainy season starts when the total stays above {wet_mm} mm for {persistence_days} consecutive days and the dry season when it falls below {dry_mm} mm. Seasonal forecasts have low skill and this is a demonstration: say so briefly. Dates are local to the area ({timezone}); 0 days ahead means today. Weather data by Open-Meteo.com (CC-BY 4.0).
+      service_unavailable: |
+        The weather service is temporarily unavailable. Apologize, say you cannot get this forecast right now and do NOT present any weather figures; suggest trying again later.
+      no_registered_area: |
+        The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
+      area_not_found: |
+        No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  get_dry_season_onset_forecast:
+    description: |
+      Predicts the start date of the dry season for a registered area (demonstrative heuristic based on the seasonal
+      ensemble forecast, valid for regions with a marked wet/dry cycle).
+
+      Use this tool when the user asks when the dry season will start. If the user names an area, pass it in
+      `area_name`; if not, the latest registered area is used.
+
+      Args:
+          area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
+
+      Returns:
+          ToolResult: The predicted onset date, or that the dry season is already underway or not expected within the horizon.
+    results:
+      success: |
+        The dry season of "{area_name}" is predicted to start around {onset_date} ({days_ahead} days ahead; rain in the last {window_days} days: {recent_mm} mm).
+        The rule used is a simple global heuristic for regions with a marked wet/dry cycle: the {window_days}-day rainfall total (median over the ensemble members) counts as wet from {wet_mm} mm and as dry below that, even between {dry_mm} and {wet_mm} mm; the rainy season starts when the total stays above {wet_mm} mm for {persistence_days} consecutive days and the dry season when it falls below {dry_mm} mm. Seasonal forecasts have low skill and this is a demonstration: say so briefly. Dates are local to the area ({timezone}); 0 days ahead means today. Weather data by Open-Meteo.com (CC-BY 4.0).
+      underway: |
+        The dry season of "{area_name}" is already underway (rain in the last {window_days} days: {recent_mm} mm, below {wet_mm} mm). This starting state is inferred from the recent rainfall: totals between {dry_mm} and {wet_mm} mm are counted as dry. No new start is needed within the {horizon_days}-day horizon.
+        The rule used is a simple global heuristic for regions with a marked wet/dry cycle: the {window_days}-day rainfall total (median over the ensemble members) counts as wet from {wet_mm} mm and as dry below that, even between {dry_mm} and {wet_mm} mm; the rainy season starts when the total stays above {wet_mm} mm for {persistence_days} consecutive days and the dry season when it falls below {dry_mm} mm. Seasonal forecasts have low skill and this is a demonstration: say so briefly. Dates are local to the area ({timezone}); 0 days ahead means today. Weather data by Open-Meteo.com (CC-BY 4.0).
+      not_within_horizon: |
+        No start of the dry season is expected for "{area_name}" within the {horizon_days}-day forecast horizon (rain in the last {window_days} days: {recent_mm} mm). Do NOT invent a date.
+        The rule used is a simple global heuristic for regions with a marked wet/dry cycle: the {window_days}-day rainfall total (median over the ensemble members) counts as wet from {wet_mm} mm and as dry below that, even between {dry_mm} and {wet_mm} mm; the rainy season starts when the total stays above {wet_mm} mm for {persistence_days} consecutive days and the dry season when it falls below {dry_mm} mm. Seasonal forecasts have low skill and this is a demonstration: say so briefly. Dates are local to the area ({timezone}); 0 days ahead means today. Weather data by Open-Meteo.com (CC-BY 4.0).
+      service_unavailable: |
+        The weather service is temporarily unavailable. Apologize, say you cannot get this forecast right now and do NOT present any weather figures; suggest trying again later.
+      no_registered_area: |
+        The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
+      area_not_found: |
+        No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  get_temperature_forecast:
+    description: |
+      Retrieves the daily minimum and maximum air temperature forecast (°C) for a registered area, today first.
+
+      Use this tool when the user asks about expected temperatures. If the user names an area, pass it in
+      `area_name`; if not, the latest registered area is used.
+
+      Args:
+          area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
+          forecast_days (int, optional): Number of days, between 1 and 16. Defaults to 16.
+
+      Returns:
+          ToolResult: Daily minimum and maximum temperatures.
+    results:
+      success: |
+        Temperature forecast for "{area_name}" (timezone {timezone}), {count} day(s):
+        {lines}
+        Weather data by Open-Meteo.com (CC-BY 4.0).
+      line: |
+        - {day}: min {tmin} °C, max {tmax} °C
+      service_unavailable: |
+        The weather service is temporarily unavailable. Apologize, say you cannot get this forecast right now and do NOT present any weather figures; suggest trying again later.
+      no_registered_area: |
+        The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
+      area_not_found: |
+        No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.

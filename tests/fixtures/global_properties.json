@@ -7,6 +7,7 @@
     "latitude": -15.5,
     "longitude": -47.5,
     "radius_m": 1000,
+    "timezone": "America/Sao_Paulo",
     "profile": "Cultivated pasture in the Cerrado, mixed with cropland and shrubland",
     "kind": "cultivated",
     "expect": {
@@ -31,6 +32,7 @@
     "latitude": -33.0,
     "longitude": -56.0,
     "radius_m": 1000,
+    "timezone": "America/Montevideo",
     "profile": "Natural temperate grassland (Pampas) used for grazing",
     "kind": "natural",
     "expect": {
@@ -55,6 +57,7 @@
     "latitude": 38.5,
     "longitude": -99.0,
     "radius_m": 1000,
+    "timezone": "America/Chicago",
     "profile": "Cropland and rangeland mosaic of the Great Plains",
     "kind": "mosaic",
     "expect": {
@@ -79,6 +82,7 @@
     "latitude": 51.0,
     "longitude": -112.0,
     "radius_m": 1000,
+    "timezone": "America/Edmonton",
     "profile": "Natural mixed-grass prairie",
     "kind": "natural",
     "expect": {
@@ -103,6 +107,7 @@
     "latitude": 53.0,
     "longitude": -8.0,
     "radius_m": 1000,
+    "timezone": "Europe/Dublin",
     "profile": "Intensively managed temperate pasture",
     "kind": "cultivated",
     "expect": {
@@ -127,6 +132,7 @@
     "latitude": 47.0,
     "longitude": 108.5,
     "radius_m": 1000,
+    "timezone": "Asia/Ulaanbaatar",
     "profile": "Steppe rangeland",
     "kind": "natural",
     "expect": {
@@ -151,6 +157,7 @@
     "latitude": 50.0,
     "longitude": 70.0,
     "radius_m": 1000,
+    "timezone": "Asia/Almaty",
     "profile": "Steppe grassland",
     "kind": "natural",
     "expect": {
@@ -175,6 +182,7 @@
     "latitude": 33.0,
     "longitude": 92.0,
     "radius_m": 1000,
+    "timezone": "Asia/Shanghai",
     "profile": "High-altitude alpine grassland (above 4000 m)",
     "kind": "natural",
     "expect": {
@@ -200,6 +208,7 @@
     "latitude": -2.0,
     "longitude": 37.0,
     "radius_m": 1000,
+    "timezone": "Africa/Nairobi",
     "profile": "Savanna rangeland with shrubs and grasses",
     "kind": "natural",
     "expect": {
@@ -224,6 +233,7 @@
     "latitude": 13.5,
     "longitude": 2.1,
     "radius_m": 1000,
+    "timezone": "Africa/Niamey",
     "profile": "Sahel mosaic of cropland, savanna, settlements and water",
     "kind": "mosaic",
     "expect": {
@@ -243,6 +253,7 @@
     "latitude": -27.0,
     "longitude": 28.5,
     "radius_m": 1000,
+    "timezone": "Africa/Johannesburg",
     "profile": "Natural highveld grassland",
     "kind": "natural",
     "expect": {
@@ -267,6 +278,7 @@
     "latitude": -27.5,
     "longitude": 150.0,
     "radius_m": 1000,
+    "timezone": "Australia/Brisbane",
     "profile": "Improved pasture and woodland in the Australian savanna belt",
     "kind": "cultivated",
     "expect": {
@@ -291,6 +303,7 @@
     "latitude": -40.0,
     "longitude": 175.5,
     "radius_m": 1000,
+    "timezone": "Pacific/Auckland",
     "profile": "Intensively grazed temperate pasture",
     "kind": "cultivated",
     "expect": {
@@ -315,6 +328,7 @@
     "latitude": -23.55,
     "longitude": -46.63,
     "radius_m": 1000,
+    "timezone": "America/Sao_Paulo",
     "profile": "Negative control: dense urban area",
     "kind": "control_urban",
     "expect": {
@@ -339,6 +353,7 @@
     "latitude": 25.0,
     "longitude": 10.0,
     "radius_m": 1000,
+    "timezone": "Africa/Algiers",
     "profile": "Negative control: hyper-arid desert",
     "kind": "control_desert",
     "expect": {

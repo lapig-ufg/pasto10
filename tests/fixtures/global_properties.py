@@ -3,7 +3,7 @@
 Shared by the end-to-end tests and the benchmarks of the pasture tools (and,
 later, the biomass tools). Each entry of ``global_properties.json`` has an
 ``id``, ``name``, ``country``, ``continent``, a center (``latitude``,
-``longitude``), a buffer ``radius_m``, a ``profile`` (what the place
+``longitude``), a buffer ``radius_m``, the expected IANA ``timezone``, a ``profile`` (what the place
 represents), a ``kind`` and the ``expect`` ranges that the e2e profile test
 checks against independent assets (GPW v1 2022, ESA WorldCover 2021, SRTM):
 
@@ -32,6 +32,7 @@ class GlobalProperty:
         latitude (float): Center latitude in decimal degrees.
         longitude (float): Center longitude in decimal degrees.
         radius_m (int): Buffer radius in meters.
+        timezone (str): IANA timezone of the place (expected from Open-Meteo ``timezone=auto``).
         profile (str): What the place represents.
         kind (str): ``cultivated``, ``natural``, ``mosaic``, ``control_urban`` or ``control_desert``.
         expect (dict): Expected profile ranges (see the module docstring).
@@ -44,6 +45,7 @@ class GlobalProperty:
     latitude: float
     longitude: float
     radius_m: int
+    timezone: str
     profile: str
     kind: str
     expect: dict = field(default_factory=dict)

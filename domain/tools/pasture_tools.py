@@ -13,7 +13,7 @@ from typing import Optional
 from semente import Context as RunContext
 from semente import Image, ToolResult, tool
 from semente.logging import log_debug, log_warning
-from semente.configs.prompts import get_agent_config, get_tool_description, get_tool_result_text
+from semente.configs.prompts import get_tool_description, get_tool_result_text
 
 from domain.schemas.feature import Feature
 from domain.schemas.pasture import PastureAreaStats
@@ -26,39 +26,16 @@ from domain.services.geospatial.pasture import (
     measure_pasture_area,
 )
 from domain.services.geospatial.pasture_image import render_pasture_map
-from domain.utils.feature_utils import find_registered_feature, get_registered_features
-from domain.utils.tool_utils import unexpected_error
+from domain.utils.tool_utils import area_label, lookup_area, unexpected_error
 
 _COMPONENT = "pasture_tools"
-
-
-def _lookup_area(run_context: RunContext, area_name: Optional[str], tool_key: str) -> tuple[Optional[Feature], Optional[ToolResult]]:
-    """Resolves the registered area a tool must analyze.
-
-    Args:
-        run_context (RunContext): The run context holding ``session_state`` (read only).
-        area_name (str, optional): Display name given by the user; None for the latest area.
-        tool_key (str): Tool name whose ``results`` texts are rendered.
-
-    Returns:
-        tuple: (Feature, None) when found; (None, ToolResult) with the
-        ``no_registered_area`` or ``area_not_found`` instructions otherwise.
-    """
-    session_state = run_context.session_state or {}
-    if not get_registered_features(session_state).features:
-        return None, ToolResult(content=get_tool_result_text(_COMPONENT, tool_key, "no_registered_area"))
-    feature = find_registered_feature(session_state, area_name)
-    if feature is None:
-        log_warning(f"{tool_key}: area not found: {area_name!r}")
-        return None, ToolResult(content=get_tool_result_text(_COMPONENT, tool_key, "area_not_found", area_name=area_name))
-    return feature, None
 
 
 def _success_text(tool_key: str, feature: Feature, stats: PastureAreaStats) -> str:
     """Renders the ``success`` text with the measured figures of an area."""
     return get_tool_result_text(
         _COMPONENT, tool_key, "success",
-        area_name=feature.name or get_agent_config("single_agent")["feature_type_fallback"].strip(), year=stats.year, source=stats.source.value,
+        area_name=area_label(feature), year=stats.year, source=stats.source.value,
         pasture_ha=stats.pasture_ha, cultivated_ha=stats.cultivated_ha, natural_ha=stats.natural_ha,
         area_ha=stats.area_ha, pasture_percent=stats.pasture_percent,
     )
@@ -107,7 +84,7 @@ def generate_pasture_map(run_context: RunContext, area_name: Optional[str] = Non
     tool_key = "generate_pasture_map"
     log_debug(f"{tool_key}: area_name={area_name!r}, year={year}")
     try:
-        feature, failure = _lookup_area(run_context, area_name, tool_key)
+        feature, failure = lookup_area(run_context, area_name, _COMPONENT, tool_key)
         if failure is not None:
             return failure
         classification, roi = classify_pasture(feature, year)
@@ -140,7 +117,7 @@ def get_pasture_area(run_context: RunContext, area_name: Optional[str] = None, y
     tool_key = "get_pasture_area"
     log_debug(f"{tool_key}: area_name={area_name!r}, year={year}")
     try:
-        feature, failure = _lookup_area(run_context, area_name, tool_key)
+        feature, failure = lookup_area(run_context, area_name, _COMPONENT, tool_key)
         if failure is not None:
             return failure
         stats = measure_area(feature, year)

@@ -58,6 +58,16 @@ The source is chosen for the whole area, never pixel by pixel, and a missing per
 
 Productivity (gC/m²) becomes dry matter with a single constant, `DRY_MATTER_PER_GC_M2 = 0.0135` t DM/ha per gC/m² (0.50 light-use efficiency x 2.7 carbon-to-dry-matter x 0.01 unit conversion). It is a general approximation calibrated for cultivated tropical pastures; elsewhere read it as an order of magnitude. Annual and monthly figures, and Global Pasture Watch and Time2Graze figures, must not be compared with each other.
 
+### Animal units (skill)
+
+The `ua-calculator` skill (`domain/skills/livestock/ua-calculator/SKILL.md`) teaches the agent to compute Animal Units, the actual stocking rate and the carrying capacity of a registered pasture from the dry-matter production returned by `get_biomass_total`, using the calculator tools: 1 AU = 450 kg live weight, intake of 2.5% of the live weight per day, a protection factor of 2 (about 4.1 t DM/AU/year of demand, 8.2 with protection) and the productive pasture hectares. Short Time2Graze periods are annualized with `365 / days covered` (never by multiplying a month by 12) and the user is warned that this extrapolates a short period. The assumptions are declared in every answer and can be overridden; the result is an order of magnitude, not a recommendation.
+
+### Weather (Open-Meteo)
+
+Five tools query [Open-Meteo](https://open-meteo.com/) for the center of a registered area, always in the timezone of the area (`timezone=auto`; the local "today" comes from the `utc_offset_seconds` of the response): `get_monthly_precipitation_forecast` (seasonal, up to 7 months), `get_daily_precipitation_forecast` (one day up to about 33 days ahead, ensemble median and quartiles from `ncep_gefs_seamless`, falling back to `gem_global`), `get_rain_season_onset_forecast` and `get_dry_season_onset_forecast`, and `get_temperature_forecast` (up to 16 days). No API key or extra dependency is needed (`requests` with retries); responses are cached for an hour per rounded coordinate. Weather data by Open-Meteo.com (CC-BY 4.0).
+
+The season onset is a simple global heuristic, for demonstration: the 30-day rolling rainfall total of each ensemble member, median over the members; the area starts wet when the last 30 days had at least 60 mm; the rainy season starts when the total stays above 60 mm for 7 days and the dry season when it falls below 30 mm, each only from the opposite state (`domain/services/geospatial/season_forecast.py`). It suits regions with a marked wet/dry cycle, and seasonal forecasts have low skill.
+
 ### Caches
 
 Results are cached per process (areas, trained forests and the latest embedding year for an hour), and concurrent requests for the same geometry and year compute only once. Because the forest is not bit-for-bit reproducible, the first estimate of a year is kept until the process restarts. Set `PASTO10_CACHE_DIR` to a writable directory to also keep results on disk between runs (off by default; entries are keyed by geometry, year, source and method version).
@@ -90,6 +100,7 @@ Earth Engine is initialized lazily on the first pasture request, never at import
 
 ```
 uv run pytest -m e2e -s                                # everything
+uv run pytest -m e2e -s tests/e2e/test_weather_e2e.py  # weather tools (no Earth Engine needed)
 uv run pytest -m e2e -s tests/e2e/test_biomass_e2e.py  # biomass tools on the 15 properties, prints a summary table
 uv run pytest -m e2e -s tests/e2e/test_generalist_e2e.py -k tools_over   # the 15 properties, prints a summary table
 PASTO10_E2E_OUT=/some/dir uv run pytest -m e2e -s      # also saves the generated maps

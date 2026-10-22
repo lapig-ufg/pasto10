@@ -2,6 +2,7 @@
 instructions per ``registration_state`` (default / pending / final)."""
 
 import pytest
+from semente import Calculator
 from semente.backends.toolkit import StateContext
 from semente.configs.prompts import get_agent_config
 
@@ -10,6 +11,12 @@ from domain.agent import get_instructions, get_tools
 from domain.services.geospatial.geometry import build_buffered_area
 from domain.utils.feature_utils import set_registered_features, summarize_feature
 from domain.schemas.feature import FeatureMetadata, RegisteredFeatures
+
+WEATHER_TOOLS = {
+    "get_monthly_precipitation_forecast", "get_daily_precipitation_forecast", "get_rain_season_onset_forecast",
+    "get_dry_season_onset_forecast", "get_temperature_forecast",
+}
+CALCULATOR_TOOLS = {"add", "subtract", "multiply", "divide", "exponentiate", "square_root"}
 
 _agent_config = get_agent_config("single_agent")
 OUTPUT_CONTRACT = _agent_config["output_contract"].strip()
@@ -20,7 +27,10 @@ def _context(**session_state) -> StateContext:
 
 
 def _tool_names(run_context) -> set[str]:
-    return {tool.name for tool in get_tools(run_context)}
+    names = set()
+    for tool in get_tools(run_context):
+        names.update(tool.functions if isinstance(tool, Calculator) else [tool.name])
+    return names
 
 
 def _candidate():
@@ -38,7 +48,7 @@ def test_domain_spec_wires_dynamic_callables():
     [
         (None, {
             "start_buffer_registration_by_coordinate", "generate_pasture_map", "get_pasture_area",
-            "generate_biomass_map", "get_biomass_total",
+            "generate_biomass_map", "get_biomass_total", *WEATHER_TOOLS, *CALCULATOR_TOOLS,
         }),
         ("pending", {"confirm_registration", "cancel_registration"}),
         ("final", {"complete_registration", "cancel_registration"}),
@@ -192,3 +202,10 @@ def test_default_instructions_describe_biomass_tools_and_semantics():
     assert "do not present biomass figures or maps" in default
     for brazil_term in ("MapBiomas", "SICAR", "Embrapa"):
         assert brazil_term not in default
+
+
+def test_biomass_rule_allows_stocking_capacity_only_through_the_skill():
+    default = _agent_config["instructions_default"]
+
+    assert "EXCEPT by following the `ua-calculator` skill" in default
+    assert "never by multiplying a month by 12" in default

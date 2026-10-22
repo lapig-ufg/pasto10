@@ -7,7 +7,7 @@ state. The neutral shell (model, persona/context helpers) lives in
 ``semente.agents.build_agent``.
 """
 
-from semente import Context as RunContext
+from semente import Calculator, Context as RunContext
 from semente.logging import log_debug
 from semente.agents.build_agent import context_blocks, persona_text
 from semente.configs.prompts import get_agent_config
@@ -21,6 +21,13 @@ from domain.tools.property_tools import (
 )
 from domain.tools.biomass_tools import generate_biomass_map, get_biomass_total
 from domain.tools.pasture_tools import generate_pasture_map, get_pasture_area
+from domain.tools.weather_tools import (
+    get_daily_precipitation_forecast,
+    get_dry_season_onset_forecast,
+    get_monthly_precipitation_forecast,
+    get_rain_season_onset_forecast,
+    get_temperature_forecast,
+)
 from domain.utils.feature_utils import get_registered_features, summarize_feature
 
 _agent_config = get_agent_config("single_agent")
@@ -40,7 +47,8 @@ def get_tools(run_context: RunContext) -> list:
       (``complete_registration``, ``cancel_registration``).
     - otherwise (default): a new area can be registered and registered areas analyzed
       (``start_buffer_registration_by_coordinate``, ``generate_pasture_map``,
-      ``get_pasture_area``, ``generate_biomass_map``, ``get_biomass_total``).
+      ``get_pasture_area``, ``generate_biomass_map``, ``get_biomass_total``,
+      the five weather tools and the ``Calculator`` toolkit).
 
     Args:
         run_context (RunContext): The run context holding ``session_state``.
@@ -61,6 +69,12 @@ def get_tools(run_context: RunContext) -> list:
         get_pasture_area,
         generate_biomass_map,
         get_biomass_total,
+        get_monthly_precipitation_forecast,
+        get_daily_precipitation_forecast,
+        get_rain_season_onset_forecast,
+        get_dry_season_onset_forecast,
+        get_temperature_forecast,
+        Calculator(exclude_tools=["is_prime", "factorial"]),
     ]
 
 

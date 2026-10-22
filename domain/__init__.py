@@ -1,6 +1,7 @@
 """Pasto10 domain — the DomainSpec that Semente assembles into the app.
 
-Exposes ``domain_spec``: the area registration tools and the dynamic
+Exposes ``domain_spec``: the area registration, pasture and biomass tools, the
+animal-unit skill (``domain/skills/livestock``) and the dynamic
 tool/instruction callables (``domain.agent``) driven by the registration
 state machine.
 
@@ -17,11 +18,18 @@ from pathlib import Path
 os.environ.setdefault("SEMENTE_PROMPTS_DIR", str(Path(__file__).resolve().parent / "prompts"))
 
 from semente import DomainSpec  # noqa: E402
+from semente.logging import log_warning  # noqa: E402
+from semente.skills import load_skills  # noqa: E402
 
 from domain.agent import get_instructions, get_tools  # noqa: E402
+
+skills = load_skills(Path(__file__).resolve().parent / "skills" / "livestock")
+if skills is None:
+    log_warning("domain: no skills were loaded from domain/skills/livestock")
 
 domain_spec = DomainSpec(
     name="Pasto10",
     tools=get_tools,
+    skills=skills,
     instructions=get_instructions,
 )
