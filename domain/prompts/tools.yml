@@ -281,3 +281,95 @@ pasture_tools:
         The satellite data service is temporarily unavailable. Apologize, say you cannot produce this result right now and do NOT present any figures or maps; suggest trying again later.
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+
+biomass_tools:
+  generate_biomass_map:
+    description: |
+      Generates a map of the dry-matter production of the pasture inside a registered area, drawn over satellite imagery.
+
+      Use this tool when the user asks to see the biomass, productivity or dry matter of one of their registered
+      areas. If the user names an area, pass it in `area_name`; if not, the latest registered area is used.
+      The default is the latest annual Global Pasture Watch year (2025). Pass `year` for another annual year
+      (2000-2025). Pass `month` (1-12), optionally with `year`, only when the user asks for recent monthly data from
+      Time2Graze, which covers only recent months and part of the world. Never pick a month or a year on your own.
+
+      The values are accumulated dry-matter production of the period in t DM/ha, NOT standing biomass and NOT available forage.
+
+      Args:
+          area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
+          year (int, optional): Reference year (2000-2025 annual; later years use recent Time2Graze data when available).
+          month (int, optional): Month (1-12) of recent Time2Graze data.
+
+      Returns:
+          ToolResult: The map image and the mean and total dry-matter production of the pasture of the area.
+    results:
+      success: |
+        Dry-matter production of the pasture of "{area_name}", period {period} ({start} to {end}, {days} days), source: {source}.
+        - Mean: {mean_t_ha} t DM/ha
+        - Total: {total_t} t DM over {pasture_ha} ha of productive pasture ({pasture_percent}% of the {area_ha} ha analyzed)
+        The map image was sent to the user. State the period and source, explain that these are accumulated dry-matter production estimates of the period (not standing biomass or available forage, and not a stocking capacity), and that they are approximate (a general conversion, calibrated for cultivated tropical pastures; elsewhere only an order of magnitude). Never compare annual with monthly figures, nor Global Pasture Watch with Time2Graze figures. Satellite estimates do not replace field verification.
+      note_mask_year: |
+        The pasture mask is the Global Pasture Watch grassland map of {mask_year}, the latest available, older than {year}: mention it briefly.
+      note_time2graze: |
+        This period comes from Time2Graze: it covers only {days} days ({start} to {end}) from {n_images} image(s), recent data with partial coverage, so say that the figures are short-period and indicative.
+      note_partial_year: |
+        The user asked for {year}, but the data cover only part of that year, from {start} to {end} ({days} days): make clear that the figures are NOT for the whole year, give these dates and days, and never present them as an annual value.
+      no_registered_area: |
+        The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
+      area_not_found: |
+        No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
+      year_unavailable: |
+        There is no dry-matter data for the requested year. Tell the user that annual data is available from {first_year} to {latest_year} and ask which year they would like. Do not present any figures.
+      month_unavailable: |
+        There is no Time2Graze data for the requested month and area. Time2Graze covers only recent months and part of the world: its data currently spans {t2g_start} to {t2g_end}. Tell the user this, suggest the annual Global Pasture Watch data instead, and do NOT present any figures or substitute another source.
+      no_pasture: |
+        The area "{area_name}" has no productive pasture according to the Global Pasture Watch grassland map, so there is no dry-matter production to report. Tell the user and do NOT present any figures.
+      earth_engine_unavailable: |
+        The satellite data service is temporarily unavailable. Apologize, say you cannot produce this result right now and do NOT present any figures or maps; suggest trying again later.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  get_biomass_total:
+    description: |
+      Measures the mean (t DM/ha) and total (t DM) dry-matter production of the pasture inside a registered area.
+
+      Use this tool when the user asks how much biomass, dry matter or pasture production an area has. If the
+      user names an area, pass it in `area_name`; if not, the latest registered area is used.
+      The default is the latest annual Global Pasture Watch year (2025). Pass `year` for another annual year
+      (2000-2025). Pass `month` (1-12), optionally with `year`, only when the user asks for recent monthly data from
+      Time2Graze, which covers only recent months and part of the world. Never pick a month or a year on your own.
+
+      The values are accumulated dry-matter production of the period in t DM/ha, NOT standing biomass and NOT available forage.
+
+      Args:
+          area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
+          year (int, optional): Reference year (2000-2025 annual; later years use recent Time2Graze data when available).
+          month (int, optional): Month (1-12) of recent Time2Graze data.
+
+      Returns:
+          ToolResult: Mean and total dry-matter production of the pasture of the area for the period.
+    results:
+      success: |
+        Dry-matter production of the pasture of "{area_name}", period {period} ({start} to {end}, {days} days), source: {source}.
+        - Mean: {mean_t_ha} t DM/ha
+        - Total: {total_t} t DM over {pasture_ha} ha of productive pasture ({pasture_percent}% of the {area_ha} ha analyzed)
+        Report the figures in plain language, always stating the period and the source. Explain that these are accumulated dry-matter production estimates of the period (not standing biomass or available forage, and not a stocking capacity), and that they are approximate (a general conversion, calibrated for cultivated tropical pastures; elsewhere only an order of magnitude). Never compare annual with monthly figures, nor Global Pasture Watch with Time2Graze figures. Satellite estimates do not replace field verification.
+      note_mask_year: |
+        The pasture mask is the Global Pasture Watch grassland map of {mask_year}, the latest available, older than {year}: mention it briefly.
+      note_time2graze: |
+        This period comes from Time2Graze: it covers only {days} days ({start} to {end}) from {n_images} image(s), recent data with partial coverage, so say that the figures are short-period and indicative.
+      note_partial_year: |
+        The user asked for {year}, but the data cover only part of that year, from {start} to {end} ({days} days): make clear that the figures are NOT for the whole year, give these dates and days, and never present them as an annual value.
+      no_registered_area: |
+        The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
+      area_not_found: |
+        No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
+      year_unavailable: |
+        There is no dry-matter data for the requested year. Tell the user that annual data is available from {first_year} to {latest_year} and ask which year they would like. Do not present any figures.
+      month_unavailable: |
+        There is no Time2Graze data for the requested month and area. Time2Graze covers only recent months and part of the world: its data currently spans {t2g_start} to {t2g_end}. Tell the user this, suggest the annual Global Pasture Watch data instead, and do NOT present any figures or substitute another source.
+      no_pasture: |
+        The area "{area_name}" has no productive pasture according to the Global Pasture Watch grassland map, so there is no dry-matter production to report. Tell the user and do NOT present any figures.
+      earth_engine_unavailable: |
+        The satellite data service is temporarily unavailable. Apologize, say you cannot produce this result right now and do NOT present any figures or maps; suggest trying again later.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.

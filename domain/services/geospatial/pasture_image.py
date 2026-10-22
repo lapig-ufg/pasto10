@@ -57,7 +57,7 @@ _DATA_ATTRIBUTION = {
 }
 
 
-def _mercator_bounds(center_pixel: Tuple[float, float], zoom: int, size: Tuple[int, int]) -> Tuple[float, float, float, float]:
+def mercator_bounds(center_pixel: Tuple[float, float], zoom: int, size: Tuple[int, int]) -> Tuple[float, float, float, float]:
     """Returns the EPSG:3857 bounds (xmin, ymin, xmax, ymax, meters) of an image of ``size`` pixels."""
     world_size = TILE_SIZE * 2 ** zoom
     half_world = math.pi * WEB_MERCATOR_RADIUS_METERS
@@ -95,6 +95,26 @@ def _fetch_overlay(
     visual = classification_image.updateMask(classification_image.gt(0)).visualize(
         min=1, max=2, palette=[CULTIVATED_COLOR, NATURAL_COLOR],
     )
+    return download_thumbnail(visual, bounds, size, scale)
+
+
+def download_thumbnail(visual: "ee.Image", bounds: Tuple[float, float, float, float], size: Tuple[int, int], scale: float) -> Image.Image:
+    """Downloads a visualized Earth Engine image as an RGBA overlay of the view (network).
+
+    Args:
+        visual (ee.Image): Image already visualized (RGB(A) bands).
+        bounds: EPSG:3857 bounds of the view in meters.
+        size (Tuple[int, int]): Output size in pixels.
+        scale (float): Native resolution of the data in meters. The thumbnail
+            is requested at this resolution (never above ``size``) and enlarged
+            by nearest neighbor.
+
+    Returns:
+        PIL.Image.Image: RGBA overlay with exactly ``size`` pixels.
+
+    Raises:
+        Exception: Earth Engine or HTTP failure.
+    """
     region = ee.Geometry.Rectangle(list(bounds), proj="EPSG:3857", geodesic=False)
     dimensions = (
         max(1, min(size[0], round((bounds[2] - bounds[0]) / scale))),
@@ -109,7 +129,7 @@ def _fetch_overlay(
     return overlay.resize(size, Image.NEAREST) if overlay.size != tuple(size) else overlay
 
 
-def _blend_overlay(background: Image.Image, overlay: Image.Image) -> Image.Image:
+def blend_overlay(background: Image.Image, overlay: Image.Image) -> Image.Image:
     """Composites the overlay on the background, scaling its alpha to ``OVERLAY_OPACITY``."""
     alpha = overlay.getchannel("A").point(lambda value: min(value, OVERLAY_OPACITY))
     overlay = overlay.copy()
@@ -117,7 +137,7 @@ def _blend_overlay(background: Image.Image, overlay: Image.Image) -> Image.Image
     return Image.alpha_composite(background.convert("RGBA"), overlay).convert("RGB")
 
 
-def _draw_outline(image: Image.Image, points: list) -> Image.Image:
+def draw_outline(image: Image.Image, points: list) -> Image.Image:
     """Draws the buffer outline (no fill, so the pasture stays visible)."""
     outlined = image.copy()
     ImageDraw.Draw(outlined).line(points + [points[0]], fill=BUFFER_OUTLINE, width=3, joint="curve")
@@ -190,9 +210,9 @@ def render_pasture_map(
     if background is None:
         background = Image.new("RGB", size, NEUTRAL_BACKGROUND)
 
-    bounds = _mercator_bounds(latlon_to_pixel(latitude, longitude, zoom), zoom, size)
-    image = _blend_overlay(background, _fetch_overlay(classification_image, bounds, size, scale))
-    image = _draw_outline(image, project_ring(feature.get_coords()[0][0], (latitude, longitude), zoom, size))
+    bounds = mercator_bounds(latlon_to_pixel(latitude, longitude, zoom), zoom, size)
+    image = blend_overlay(background, _fetch_overlay(classification_image, bounds, size, scale))
+    image = draw_outline(image, project_ring(feature.get_coords()[0][0], (latitude, longitude), zoom, size))
     image = draw_center_marker(image, (size[0] / 2, size[1] / 2))
     mpp = meters_per_pixel(latitude, zoom)
     image = draw_scale_bar(image, mpp)

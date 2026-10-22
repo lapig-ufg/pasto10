@@ -19,6 +19,7 @@ from domain.tools.property_tools import (
     confirm_registration,
     start_buffer_registration_by_coordinate,
 )
+from domain.tools.biomass_tools import generate_biomass_map, get_biomass_total
 from domain.tools.pasture_tools import generate_pasture_map, get_pasture_area
 from domain.utils.feature_utils import get_registered_features, summarize_feature
 
@@ -39,7 +40,7 @@ def get_tools(run_context: RunContext) -> list:
       (``complete_registration``, ``cancel_registration``).
     - otherwise (default): a new area can be registered and registered areas analyzed
       (``start_buffer_registration_by_coordinate``, ``generate_pasture_map``,
-      ``get_pasture_area``).
+      ``get_pasture_area``, ``generate_biomass_map``, ``get_biomass_total``).
 
     Args:
         run_context (RunContext): The run context holding ``session_state``.
@@ -54,7 +55,13 @@ def get_tools(run_context: RunContext) -> list:
         return [confirm_registration, cancel_registration]
     if registration_state == "final":
         return [complete_registration, cancel_registration]
-    return [start_buffer_registration_by_coordinate, generate_pasture_map, get_pasture_area]
+    return [
+        start_buffer_registration_by_coordinate,
+        generate_pasture_map,
+        get_pasture_area,
+        generate_biomass_map,
+        get_biomass_total,
+    ]
 
 
 def _registrations_text(session_state) -> str:

@@ -41,7 +41,7 @@ def fake_overlay(monkeypatch):
 def test_mercator_bounds_are_square_and_centered():
     center = latlon_to_pixel(-15.5, -47.5, 15)
 
-    xmin, ymin, xmax, ymax = pasture_image._mercator_bounds(center, 15, SIZE)
+    xmin, ymin, xmax, ymax = pasture_image.mercator_bounds(center, 15, SIZE)
 
     assert xmax > xmin and ymax > ymin
     assert math.isclose(xmax - xmin, ymax - ymin, rel_tol=1e-9)

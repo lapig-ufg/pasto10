@@ -305,7 +305,7 @@ def resolve_year(roi: "ee.Geometry", year: Optional[int], geometry_key: Optional
     return year
 
 
-def _geometry_key(feature: Feature) -> str:
+def geometry_key(feature: Feature) -> str:
     """Returns a short hash of the feature geometry, so edited areas never hit stale cache entries."""
     return hashlib.sha1(json.dumps(feature.get_coords()).encode()).hexdigest()[:16]
 
@@ -326,13 +326,13 @@ def _stats_key(geometry_key: str, year: int) -> tuple:
 
 def _build_classification(feature: Feature, roi: "ee.Geometry", year: int) -> PastureClassification:
     """Builds the class image of an already validated year (trains the forest when needed)."""
-    geometry_key = _geometry_key(feature)
+    geom_key = geometry_key(feature)
     source = _source_for(year)
     if source is PastureSource.GPW:
         image, scale = _gpw_image(year), GPW_SCALE_METERS
     else:
-        image, scale = _predicted_image(roi, year, geometry_key), CLASSIFICATION_SCALE_METERS
-    return PastureClassification(image, year, source, scale, _stats_key(geometry_key, year))
+        image, scale = _predicted_image(roi, year, geom_key), CLASSIFICATION_SCALE_METERS
+    return PastureClassification(image, year, source, scale, _stats_key(geom_key, year))
 
 
 def classify_pasture(feature: Feature, year: Optional[int] = None) -> tuple[PastureClassification, "ee.Geometry"]:
@@ -351,7 +351,7 @@ def classify_pasture(feature: Feature, year: Optional[int] = None) -> tuple[Past
         YearUnavailable: If the year has no data (see ``resolve_year``).
     """
     roi = feature_geometry(feature)
-    classification = _build_classification(feature, roi, resolve_year(roi, year, _geometry_key(feature)))
+    classification = _build_classification(feature, roi, resolve_year(roi, year, geometry_key(feature)))
     log_debug(f"classify_pasture: year={classification.year}, source={classification.source.name}")
     return classification, roi
 
@@ -443,9 +443,9 @@ def get_pasture_area(feature: Feature, year: Optional[int] = None) -> PastureAre
         Exception: Any Earth Engine computation error.
     """
     roi = feature_geometry(feature)
-    geometry_key = _geometry_key(feature)
-    resolved = resolve_year(roi, year, geometry_key)
-    cached = _stats_cache.peek(_stats_key(geometry_key, resolved)) or _load_stats(_stats_key(geometry_key, resolved))
+    geom_key = geometry_key(feature)
+    resolved = resolve_year(roi, year, geom_key)
+    cached = _stats_cache.peek(_stats_key(geom_key, resolved)) or _load_stats(_stats_key(geom_key, resolved))
     if cached is not None:
         return cached
     return measure_pasture_area(_build_classification(feature, roi, resolved), roi)

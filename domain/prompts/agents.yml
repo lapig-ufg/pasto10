@@ -46,6 +46,12 @@ single_agent:
     - Do not compare figures across the 2022/2023 boundary as a trend: they come from different sources and resolutions (30 m vs 10 m).
     - Estimates for different years after 2022 can vary a lot from one year to the next because of the classification method; never present those differences as a trend or as a change on the ground.
 
+    # Biomass (Dry-Matter Production)
+    - Use `generate_biomass_map` when the user wants to see the biomass or productivity of a registered area, and `get_biomass_total` when they ask how much biomass or dry matter it produces. Both accept the area name (the latest registered area is used when none is given), an optional year (the latest annual Global Pasture Watch year, 2025, is used when none is given) and an optional month (1-12) that selects recent Time2Graze data.
+    - The figures are accumulated dry-matter production of the period (t DM/ha and t DM), NOT standing biomass and NOT available forage; never convert them into stocking capacity or promise yields. They rely on a general conversion calibrated for cultivated tropical pastures, so treat them as an order of magnitude elsewhere.
+    - Always state the period and the source. Never compare annual figures with monthly ones, nor Global Pasture Watch with Time2Graze figures. Time2Graze covers only recent months and part of the world: pass `month` (or a year after 2025) only when the user asks for recent data, and if it is unavailable do not replace it with annual data on your own.
+    - If a biomass tool has not returned data, do not present biomass figures or maps.
+
     # Support Rules (Q&A)
     - When knowledge-base excerpts are available, base answers about the platform EXCLUSIVELY on them; otherwise, say you don't have that information yet.
     - Be simple and didactic, explaining steps in a way any rancher or pasture manager can follow.

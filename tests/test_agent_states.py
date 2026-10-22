@@ -36,7 +36,10 @@ def test_domain_spec_wires_dynamic_callables():
 @pytest.mark.parametrize(
     "registration_state, expected",
     [
-        (None, {"start_buffer_registration_by_coordinate", "generate_pasture_map", "get_pasture_area"}),
+        (None, {
+            "start_buffer_registration_by_coordinate", "generate_pasture_map", "get_pasture_area",
+            "generate_biomass_map", "get_biomass_total",
+        }),
         ("pending", {"confirm_registration", "cancel_registration"}),
         ("final", {"complete_registration", "cancel_registration"}),
     ],
@@ -177,4 +180,15 @@ def test_default_instructions_describe_pasture_tools_and_guard_against_invented_
     assert "generate_pasture_map" in default and "get_pasture_area" in default
     assert "If no tool has returned data, do not present map-based figures or results." in default
     for brazil_term in ("MapBiomas", "SICAR", "CAR "):
+        assert brazil_term not in default
+
+
+def test_default_instructions_describe_biomass_tools_and_semantics():
+    default = _agent_config["instructions_default"]
+
+    assert "generate_biomass_map" in default and "get_biomass_total" in default
+    assert "NOT standing biomass and NOT available forage" in default
+    assert "Never compare annual figures with monthly ones" in default
+    assert "do not present biomass figures or maps" in default
+    for brazil_term in ("MapBiomas", "SICAR", "Embrapa"):
         assert brazil_term not in default

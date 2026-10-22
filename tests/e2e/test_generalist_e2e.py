@@ -187,7 +187,7 @@ def test_classifier_agrees_with_global_pasture_watch_v1_1():
         site = item.id
         feature = build_buffered_area(item.latitude, item.longitude, benchmark.RADIUS_METERS)
         roi = pasture.feature_geometry(feature)
-        key = pasture._geometry_key(feature)
+        key = pasture.geometry_key(feature)
         for year in benchmark.EVAL_YEARS:
             predicted = pasture._predicted_image(roi, year, key)
             result = benchmark.metrics(benchmark.confusion(roi, predicted, year))

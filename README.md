@@ -26,7 +26,7 @@ Pasto10 reads these maps through Google Earth Engine:
 
 This is a demonstration of how to combine global datasets, not a production-grade product: each country would improve it with its own policies and registries. Cells that Global Pasture Watch leaves without data are counted as non-grassland, so the analyzed area equals the whole registered area.
 
-When no year is given the tools use 2022, the latest published Global Pasture Watch v1 map; a later year must be requested explicitly and always returns an experimental estimate. Pasture area is the sum of cultivated and natural/semi-natural grassland, in hectares inside the registered area. Time2Graze is not yet integrated into the pasture tools.
+When no year is given the tools use 2022, the latest published Global Pasture Watch v1 map; a later year must be requested explicitly and always returns an experimental estimate. Pasture area is the sum of cultivated and natural/semi-natural grassland, in hectares inside the registered area. Time2Graze is used by the biomass tools (below), not by the pasture tools.
 
 ### Validation of the post-2022 estimate
 
@@ -42,6 +42,21 @@ The v1-1 collection has labels for 2023 and 2024, so the estimate can be checked
 ### Masked pixels of Global Pasture Watch
 
 Global Pasture Watch leaves its class band masked where its model did not run (water, bare ground, dense urban areas). `tools/check_gpw_mask.py` compares those pixels with ESA WorldCover 2021 over 27 buffers on all continents: 74.5% of the masked pixels are built-up, bare, snow or water, 1.6% are WorldCover grassland, and only 1.0% of all WorldCover grassland is masked; the remainder is tree, shrub or cropland. Masked therefore means not grassland, and Pasto10 counts it as class 0.
+
+### Biomass (dry-matter production)
+
+`generate_biomass_map` and `get_biomass_total` report the dry-matter production of the pasture of a registered area: mean (t DM/ha) and total (t DM). The figures are the accumulated production of a period, not standing biomass nor available forage, and they say nothing about stocking capacity.
+
+| Request | Source | Resolution |
+| --- | --- | --- |
+| No year, no month | Global Pasture Watch annual productivity (`ggpp-30m/v1-1/ugpp_m`, band `gc_m2`), latest year (2025) | 30 m |
+| A year from 2000 to 2025 | The same collection, that year | 30 m |
+| A month (with or without year) | Time2Graze productivity (`projects/wri-lcl-time2graze/assets/ugpp_prod_10m_v1`, band `ugpp`), average of the images of the month times its days | 10 m |
+| A year after 2025 | Time2Graze accumulated over the part of the year with data (the real period and number of days are reported) | 10 m |
+
+The source is chosen for the whole area, never pixel by pixel, and a missing period is reported as unavailable instead of being replaced by another source. Time2Graze covers only recent months (currently a few recent months, discovered dynamically and cached for a day) and only part of the world, so many areas have no monthly data. Pasture pixels are those of the Global Pasture Watch grassland map (`ggc-30m/v1/grassland_c`, masked pixels counted as not grassland); that map ends in 2022, so later periods use the 2022 mask and say so. An area with less than 1% of productive pasture returns no figures.
+
+Productivity (gC/m²) becomes dry matter with a single constant, `DRY_MATTER_PER_GC_M2 = 0.0135` t DM/ha per gC/m² (0.50 light-use efficiency x 2.7 carbon-to-dry-matter x 0.01 unit conversion). It is a general approximation calibrated for cultivated tropical pastures; elsewhere read it as an order of magnitude. Annual and monthly figures, and Global Pasture Watch and Time2Graze figures, must not be compared with each other.
 
 ### Caches
 
@@ -69,12 +84,13 @@ Earth Engine is initialized lazily on the first pasture request, never at import
 
 ### Test properties and end-to-end tests
 
-`tests/fixtures/global_properties.json` (loader `tests/fixtures/global_properties.py`) fixes 15 properties around the world: cultivated pasture (Goiás, Ireland, Queensland, New Zealand), natural grassland and steppe (Uruguay, Alberta, Mongolia, Kazakhstan, South African highveld, Kenyan savanna, Qinghai-Tibet Plateau), mosaics (Kansas, Sahel) and two negative controls (São Paulo, Sahara). The e2e test checks that each point really has its described profile against independent assets (GPW v1, ESA WorldCover, SRTM elevation).
+`tests/fixtures/global_properties.json` (used by the pasture and biomass e2e tests; loader `tests/fixtures/global_properties.py`) fixes 15 properties around the world: cultivated pasture (Goiás, Ireland, Queensland, New Zealand), natural grassland and steppe (Uruguay, Alberta, Mongolia, Kazakhstan, South African highveld, Kenyan savanna, Qinghai-Tibet Plateau), mosaics (Kansas, Sahel) and two negative controls (São Paulo, Sahara). The e2e test checks that each point really has its described profile against independent assets (GPW v1, ESA WorldCover, SRTM elevation).
 
 `uv run pytest` skips the real Earth Engine tests. With the `GEE_*` variables exported run:
 
 ```
 uv run pytest -m e2e -s                                # everything
+uv run pytest -m e2e -s tests/e2e/test_biomass_e2e.py  # biomass tools on the 15 properties, prints a summary table
 uv run pytest -m e2e -s tests/e2e/test_generalist_e2e.py -k tools_over   # the 15 properties, prints a summary table
 PASTO10_E2E_OUT=/some/dir uv run pytest -m e2e -s      # also saves the generated maps
 uv run python tools/benchmark_pasture.py --designs slide3 --out bench.jsonl   # validation against v1-1
