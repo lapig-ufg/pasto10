@@ -93,6 +93,36 @@ Both map portfolios are developed with contributions from [LAPIG/UFG](https://la
 
 Install the dependencies with `uv sync` and run the tests with `uv run pytest` (offline). The pasture tools query Google Earth Engine, so they need the `GEE_*` variables described below.
 
+### Running the chat locally
+
+The chat UI is the Streamlit interface that ships with Semente (`uv run semente streamlit`); Pasto10 does not need a front end of its own. Copy `.env.example` to `.env`, fill in `GOOGLE_API_KEY` and the `GEE_*` variables (`GEE_KEY_FILE` as an absolute path), then run:
+
+```
+scripts/run_local.sh
+```
+
+The script reads only `GOOGLE_API_KEY` and `GEE_*` from the env file (pass another file as the first argument) and runs with SQLite, so no database, S3 or WhatsApp settings are needed. Open http://localhost:8501, enter anonymously and accept the terms. The agent answers in English; the fixed labels of the interface (login, upload box) are Semente's and are in Portuguese.
+
+To register a property, type its coordinates in the chat, for example `Register my farm at latitude -33.0, longitude -56.0 with a 1000 m radius`, confirm the area and give it a name. Then ask for the pasture map, biomass, a bulletin, a video, weather or a stocking-capacity estimate. The fixed test properties below can be pasted in the same way.
+
+| Name | Country | Latitude | Longitude | Profile |
+| --- | --- | --- | --- | --- |
+| Goiás | Brazil | -15.5 | -47.5 | Cultivated pasture in the Cerrado, mixed with cropland and shrubland |
+| Llanos de Moxos | Bolivia | -14.0 | -65.5 | Seasonally flooded natural savanna grassland of the Beni (Llanos de Moxos) |
+| Chiquitania | Bolivia | -15.5 | -60.5 | Cultivated pasture mixed with dry forest in the Chiquitania (Santa Cruz) |
+| Chaco | Paraguay | -22.5 | -59.5 | Cultivated pasture of the Paraguayan Chaco cattle belt |
+| Llanos Orientales | Colombia | 4.5 | -72.0 | Savanna of the Llanos Orientales with cultivated and natural grassland and gallery forest |
+| Cajamarca | Peru | -7.0 | -78.3 | High-altitude natural pasture of the Andes (above 3000 m) |
+| Pampa Humeda | Argentina | -36.0 | -60.0 | Mosaic of cropland and natural grassland of the humid Pampas |
+| Pampas | Uruguay | -33.0 | -56.0 | Natural temperate grassland (Pampas) used for grazing |
+| Aysén | Chile | -45.6 | -72.1 | Cultivated pasture and grass steppe of the Aysén valleys (Chilean Patagonia) |
+| Llanos de Apure | Venezuela | 7.5 | -69.0 | Flat natural savanna grassland of the Venezuelan Llanos |
+| Kansas | United States | 38.5 | -99.0 | Cropland and rangeland mosaic of the Great Plains |
+| Kenya | Kenya | -2.0 | 37.0 | Savanna rangeland with shrubs and grasses |
+| Queensland | Australia | -27.5 | 150.0 | Improved pasture and woodland in the Australian savanna belt |
+| Lima | Peru | -12.05 | -77.04 | Negative control: dense urban area |
+| Atacama | Chile | -23.5 | -69.0 | Negative control: hyper-arid desert |
+
 ## Configuration
 
 ### Google Earth Engine
