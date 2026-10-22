@@ -12,7 +12,7 @@ model only gets a generic message.
 from typing import Optional
 
 from semente import Context as RunContext
-from semente import Image, ToolResult, tool
+from semente import Image, ToolResult, Video, tool
 from semente.logging import log_debug, log_warning
 from semente.configs.prompts import get_tool_description, get_tool_result_text
 
@@ -28,6 +28,12 @@ from domain.services.geospatial.biomass import (
     measure_biomass,
 )
 from domain.services.geospatial.biomass_image import render_biomass_map
+from domain.services.geospatial.biomass_video import (
+    VideoDeadlineExceeded,
+    VideoEncoderUnavailable,
+    VideoEncodingFailed,
+    generate_biomass_video as render_video,
+)
 from domain.services.geospatial.gee import EarthEngineUnavailable
 from domain.utils.tool_utils import area_label, lookup_area, unexpected_error
 
@@ -165,3 +171,67 @@ def get_biomass_total(
         return ToolResult(content=_success_text(tool_key, feature, measure_total(feature, year, month)))
     except Exception as error:
         return _handle_known_errors(error, tool_key, feature)
+
+
+@tool(description=get_tool_description(_COMPONENT, "generate_biomass_video"))
+def generate_biomass_video(run_context: RunContext, area_name: Optional[str] = None, years: Optional[int] = None):
+    """Generates an animated video of the evolution of the dry-matter production of a registered area.
+
+    Mode: one frame per month of recent Time2Graze data when at least two usable
+    months exist over the area; otherwise an annual fallback with the last
+    ``years`` Global Pasture Watch years (not monthly). All frames share one
+    fixed color scale and are labeled with their period.
+
+    Args:
+        run_context (RunContext): The run context holding ``session_state`` (read only).
+        area_name (str, optional): Name of the registered area; the latest registered area when omitted.
+        years (int, optional): Number of annual frames for the fallback (2 to 12, default 10).
+
+    Returns:
+        ToolResult: ``success_monthly`` or ``success_annual_fallback`` (mode, frames,
+        color scale) with the MP4 video attached; or ``no_registered_area``,
+        ``area_not_found``, ``no_pasture``, ``insufficient_data``,
+        ``encoder_unavailable``, ``encoding_failed``, ``timeout``,
+        ``earth_engine_unavailable`` or ``error`` instructions (no video).
+
+    Side effects:
+        None on ``session_state``. Queries Earth Engine, downloads tiles and runs ffmpeg.
+    """
+    tool_key = "generate_biomass_video"
+    log_debug(f"{tool_key}: area_name={area_name!r}, years={years}")
+    feature = None
+    try:
+        feature, failure = lookup_area(run_context, area_name, _COMPONENT, tool_key)
+        if failure is not None:
+            return failure
+        video = render_video(feature, years)
+        key = "success_monthly" if video.mode == "monthly" else "success_annual_fallback"
+        content = get_tool_result_text(
+            _COMPONENT, tool_key, key, area_name=area_label(feature), n_frames=len(video.frames),
+            labels=", ".join(video.frames), vmin=video.vmin, vmax=video.vmax, duration=video.duration,
+            reason_text=get_tool_result_text(_COMPONENT, tool_key, f"fallback_reason_{video.reason}") if video.mode != "monthly" else "",
+        )
+        media = Video(
+            content=video.content, format=video.format, mime_type=video.mime_type, duration=video.duration,
+            width=video.width, height=video.height, fps=video.fps,
+        )
+        return ToolResult(content=content, videos=[media])
+    except NoPastureBiomass:
+        return ToolResult(content=get_tool_result_text(_COMPONENT, tool_key, "no_pasture", area_name=area_label(feature) if feature else ""))
+    except BiomassPeriodUnavailable as error:
+        log_warning(f"{tool_key}: {error}")
+        return ToolResult(content=get_tool_result_text(_COMPONENT, tool_key, "insufficient_data"))
+    except VideoEncoderUnavailable as error:
+        log_warning(f"{tool_key}: {error}")
+        return ToolResult(content=get_tool_result_text(_COMPONENT, tool_key, "encoder_unavailable"))
+    except VideoEncodingFailed as error:
+        log_warning(f"{tool_key}: {error}")
+        return ToolResult(content=get_tool_result_text(_COMPONENT, tool_key, "encoding_failed"))
+    except VideoDeadlineExceeded:
+        log_warning(f"{tool_key}: deadline exceeded")
+        return ToolResult(content=get_tool_result_text(_COMPONENT, tool_key, "timeout"))
+    except EarthEngineUnavailable as error:
+        log_warning(f"{tool_key}: {error}")
+        return ToolResult(content=get_tool_result_text(_COMPONENT, tool_key, "earth_engine_unavailable"))
+    except Exception:
+        return unexpected_error(_COMPONENT, tool_key)

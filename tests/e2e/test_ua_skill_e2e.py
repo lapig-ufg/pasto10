@@ -2,7 +2,7 @@
 
 Reproduces the skill's formulas (1 AU = 450 kg, 2.5% of live weight per day,
 protection factor 2, annualization with 365 / days covered) on the biomass of
-four fixed properties and checks that the resulting carrying capacity is
+four fixed properties (Brazil, Bolivia, Colombia, Kenya) and checks that the resulting carrying capacity is
 plausible (0.1 to 10 AU/ha).
 """
 
@@ -21,7 +21,7 @@ AU_KG = 450
 INTAKE_PER_DAY = 0.025
 PROTECTION_FACTOR = 2
 DEMAND_T_DM_PER_AU_YEAR = AU_KG * INTAKE_PER_DAY * 365 / 1000 * PROTECTION_FACTOR
-PROPERTY_IDS = ("goias", "ireland", "kenya", "new_zealand")
+PROPERTY_IDS = ("goias", "santa_cruz", "llanos_colombia", "kenya")
 _PROPERTIES = {item.id: item for item in load_global_properties()}
 
 

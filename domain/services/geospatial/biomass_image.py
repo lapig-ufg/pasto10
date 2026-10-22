@@ -53,8 +53,23 @@ _ATTRIBUTION = {
 _BAR_SIZE = (150, 14)
 
 
-def _fetch_overlay(
+def stretch_of(stats: BiomassStats, value_range: Optional[Tuple[float, float]] = None) -> Tuple[float, float]:
+    """Returns the (low, high) color stretch in t DM/ha.
+
+    Args:
+        stats (BiomassStats): Gives the default stretch (2nd to 98th percentile).
+        value_range (Tuple[float, float], optional): Fixed range overriding the stats (e.g. shared by video frames).
+
+    Returns:
+        Tuple[float, float]: ``(low, high)`` with ``high`` at least 0.1 above ``low``.
+    """
+    low, high = value_range if value_range is not None else (stats.p02_t_ha, stats.p98_t_ha)
+    return low, max(high, low + 0.1)
+
+
+def fetch_overlay(
     image: "ee.Image", stats: BiomassStats, bounds: Tuple[float, float, float, float], size: Tuple[int, int],
+    value_range: Optional[Tuple[float, float]] = None,
 ) -> Image.Image:
     """Downloads the biomass image as a colored transparent overlay (network, Earth Engine).
 
@@ -63,6 +78,7 @@ def _fetch_overlay(
         stats (BiomassStats): Gives the color stretch (2nd to 98th percentile) and the resolution.
         bounds: EPSG:3857 bounds of the view in meters.
         size (Tuple[int, int]): Output size in pixels.
+        value_range (Tuple[float, float], optional): Fixed (low, high) stretch; defaults to the stats.
 
     Returns:
         PIL.Image.Image: RGBA overlay with exactly ``size`` pixels.
@@ -70,18 +86,21 @@ def _fetch_overlay(
     Raises:
         Exception: Earth Engine or HTTP failure.
     """
-    low, high = stats.p02_t_ha, max(stats.p98_t_ha, stats.p02_t_ha + 0.1)
+    low, high = stretch_of(stats, value_range)
     visual = image.visualize(min=low, max=high, palette=PALETTE)
     return download_thumbnail(visual, bounds, size, stats.scale_m)
 
 
-def _draw_colorbar(image: Image.Image, stats: BiomassStats, bottom: int) -> Image.Image:
+def draw_colorbar(
+    image: Image.Image, stats: BiomassStats, bottom: int, value_range: Optional[Tuple[float, float]] = None,
+) -> Image.Image:
     """Draws the colorbar (t DM/ha) on the bottom-left corner, ending above ``bottom``.
 
     Args:
         image (PIL.Image.Image): Image to draw on (a copy is returned).
         stats (BiomassStats): Gives the value range of the bar.
         bottom (int): Pixel row the colorbar must stay above.
+        value_range (Tuple[float, float], optional): Fixed (low, high) range; defaults to the stats.
 
     Returns:
         PIL.Image.Image: New image with the colorbar.
@@ -89,7 +108,7 @@ def _draw_colorbar(image: Image.Image, stats: BiomassStats, bottom: int) -> Imag
     font = load_font(max(12, int(image.size[1] * 0.026)))
     padding = 6
     width, height = _BAR_SIZE
-    low, high = stats.p02_t_ha, max(stats.p98_t_ha, stats.p02_t_ha + 0.1)
+    low, high = stretch_of(stats, value_range)
     title, low_text, high_text = "Dry matter (t DM/ha)", f"{low:.1f}", f"{high:.1f}"
     box_width = max(width + 2 * padding, int(font.getlength(title)) + 2 * padding)
     box_height = height + 2 * padding + 2 * font.size + 4
@@ -152,12 +171,12 @@ def render_biomass_map(
         background = Image.new("RGB", size, NEUTRAL_BACKGROUND)
 
     bounds = mercator_bounds(latlon_to_pixel(latitude, longitude, zoom), zoom, size)
-    image = blend_overlay(background, _fetch_overlay(biomass_image, stats, bounds, size))
+    image = blend_overlay(background, fetch_overlay(biomass_image, stats, bounds, size))
     image = draw_outline(image, project_ring(feature.get_coords()[0][0], (latitude, longitude), zoom, size))
     image = draw_center_marker(image, (size[0] / 2, size[1] / 2))
     mpp = meters_per_pixel(latitude, zoom)
     image = draw_scale_bar(image, mpp)
-    image = _draw_colorbar(image, stats, bottom=scale_bar_box(size, mpp)[1] - 8)
+    image = draw_colorbar(image, stats, bottom=scale_bar_box(size, mpp)[1] - 8)
     image = draw_corner_label(
         image, f"{stats.period_label} · Dry matter {stats.mean_t_ha:g} t/ha · {stats.total_t:g} t",
     )

@@ -20,12 +20,12 @@ def _stats(source=BiomassSource.GPW_ANNUAL, label="2025"):
 
 @pytest.fixture
 def fake_overlay(monkeypatch):
-    def fetch(image, stats, bounds, size):
+    def fetch(image, stats, bounds, size, value_range=None):
         overlay = Image.new("RGBA", size, (0, 0, 0, 0))
         overlay.paste(Image.new("RGBA", (100, 100), (0, 200, 0, 255)), (20, 300))
         return overlay
 
-    monkeypatch.setattr(biomass_image, "_fetch_overlay", fetch)
+    monkeypatch.setattr(biomass_image, "fetch_overlay", fetch)
 
 
 def test_render_over_neutral_background_is_png(fake_overlay):
@@ -61,7 +61,7 @@ def test_label_and_attribution_state_period_source_and_estimate(monkeypatch, fak
 def test_colorbar_is_drawn_with_the_value_range():
     image = Image.new("RGB", (640, 640), (10, 10, 10))
 
-    drawn = biomass_image._draw_colorbar(image, _stats(), bottom=600)
+    drawn = biomass_image.draw_colorbar(image, _stats(), bottom=600)
 
     assert drawn.size == image.size and drawn.tobytes() != image.tobytes()
 
@@ -70,7 +70,7 @@ def test_overlay_failure_propagates(monkeypatch):
     def boom(*args, **kwargs):
         raise RuntimeError("ee down")
 
-    monkeypatch.setattr(biomass_image, "_fetch_overlay", boom)
+    monkeypatch.setattr(biomass_image, "fetch_overlay", boom)
 
     with pytest.raises(RuntimeError):
         biomass_image.render_biomass_map(build_buffered_area(-15.5, -47.5, 1000), "x", _stats())

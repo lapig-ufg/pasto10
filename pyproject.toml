@@ -7,6 +7,7 @@ requires-python = ">=3.14"
 dependencies = [
     "earthengine-api==1.7.4",
     "pillow>=12.3.0",
+    "reportlab>=5.0.1",
     "requests>=2.34.2",
     "semente-agents",
 ]
@@ -16,6 +17,7 @@ semente-agents = { git = "https://github.com/lapig-ufg/semente.git" }
 
 [dependency-groups]
 dev = [
+    "pypdf>=6.21.2",
     "pytest>=9.1.1",
 ]
 

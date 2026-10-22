@@ -91,7 +91,7 @@ persona_tools:
       region where they operate.
 
       Args:
-          regionality (str): The user's city, region or country (e.g. "Mato Grosso, Brazil", "Queensland, Australia").
+          regionality (str): The user's city, region or country (e.g. "Santa Cruz, Bolivia", "Queensland, Australia").
   create_persona_preference:
     description: |
       Adds a new preference, interest or behavior discovered about the user.
@@ -235,7 +235,7 @@ pasture_tools:
         - Natural/semi-natural grassland: {natural_ha} ha
         The map image was sent to the user. Describe it briefly: state the year and the data source,
         and give the pasture area in hectares. Remember that this is satellite-derived and does not replace field verification.
-        If the source is the Pasto10 classification, this is an experimental estimate, not an official map and not a measurement: state that clearly, present the figures only as an order of magnitude, say that it can diverge a lot from one year to the next and from the official map (in a validation against official maps, about 90% of the pixels agreed on average, but some areas deviated by several times the official pasture area), do not compare it with earlier years as a trend, and recommend 2022 (the latest Global Pasture Watch year) as the reliable reference.
+        If the source is the Pasto10 classification, this is an experimental estimate, not an official map (it may also report small amounts of pasture where there is none, in arid or urban areas) and not a measurement: state that clearly, present the figures only as an order of magnitude, say that it can diverge a lot from one year to the next and from the official map (in a validation against official maps, about 90% of the pixels agreed on average, but some areas deviated by several times the official pasture area), do not compare it with earlier years as a trend, and recommend 2022 (the latest Global Pasture Watch year) as the reliable reference.
       no_registered_area: |
         The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
       area_not_found: |
@@ -270,7 +270,7 @@ pasture_tools:
         - Natural/semi-natural grassland: {natural_ha} ha
         Report the figures to the user in plain language, always stating the year and the data source.
         Remember that this is satellite-derived and does not replace field verification.
-        If the source is the Pasto10 classification, this is an experimental estimate, not an official map and not a measurement: state that clearly, present the figures only as an order of magnitude, say that it can diverge a lot from one year to the next and from the official map (in a validation against official maps, about 90% of the pixels agreed on average, but some areas deviated by several times the official pasture area), do not compare it with earlier years as a trend, and recommend 2022 (the latest Global Pasture Watch year) as the reliable reference.
+        If the source is the Pasto10 classification, this is an experimental estimate, not an official map (it may also report small amounts of pasture where there is none, in arid or urban areas) and not a measurement: state that clearly, present the figures only as an order of magnitude, say that it can diverge a lot from one year to the next and from the official map (in a validation against official maps, about 90% of the pixels agreed on average, but some areas deviated by several times the official pasture area), do not compare it with earlier years as a trend, and recommend 2022 (the latest Global Pasture Watch year) as the reliable reference.
       no_registered_area: |
         The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
       area_not_found: |
@@ -371,6 +371,53 @@ biomass_tools:
         The area "{area_name}" has no productive pasture according to the Global Pasture Watch grassland map, so there is no dry-matter production to report. Tell the user and do NOT present any figures.
       earth_engine_unavailable: |
         The satellite data service is temporarily unavailable. Apologize, say you cannot produce this result right now and do NOT present any figures or maps; suggest trying again later.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  generate_biomass_video:
+    description: |
+      Generates a short animated video (MP4) of the evolution of the dry-matter production of the pasture of a
+      registered area, drawn over satellite imagery, with a fixed color scale across the frames and the reference
+      period written on each frame.
+
+      Use this tool when the user asks for an animation, time series or evolution of the biomass or dry-matter
+      production of an area. If the user names an area, pass it in `area_name`; if not, the latest registered area is used.
+      The video is monthly when at least two recent months of Time2Graze data exist over the area (recent data,
+      partial coverage); otherwise it falls back to annual Global Pasture Watch frames (the last 10 years by default;
+      `years` sets how many, 2 to 12), which is NOT monthly. Never pick the mode yourself.
+
+      Args:
+          area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
+          years (int, optional): Number of annual frames for the annual fallback, between 2 and 12. Defaults to 10.
+
+      Returns:
+          ToolResult: The MP4 video and a description of its mode, frames and color scale.
+    results:
+      success_monthly: |
+        The monthly video of the dry-matter production of "{area_name}" was generated: {n_frames} frames ({labels}), fixed color scale {vmin} to {vmax} t DM/ha, {duration} s. Source: Time2Graze (recent 10 m data) with the Global Pasture Watch pasture mask.
+        State that the video is MONTHLY because recent Time2Graze data exist for the area, that each frame is a monthly equivalent (mean daily production times the days of the month; a frame marked with * covers only part of the month and is scaled), that the data are recent with partial coverage, and that the colors use the same scale in all frames. The values are accumulated dry-matter production estimates, not standing biomass or available forage. Never compare these monthly figures with annual ones. Satellite estimates do not replace field verification.
+      success_annual_fallback: |
+        The annual video of the dry-matter production of "{area_name}" was generated: {n_frames} frames ({labels}), fixed color scale {vmin} to {vmax} t DM/ha, {duration} s. Source: Global Pasture Watch annual productivity.
+        State clearly that this video is ANNUAL, NOT monthly: {reason_text} One frame per year was used instead. The colors use the same scale in all frames. The values are accumulated dry-matter production estimates, not standing biomass or available forage. Never compare these annual figures with monthly ones. Satellite estimates do not replace field verification.
+      no_pasture: |
+        The area "{area_name}" has no productive pasture according to the Global Pasture Watch grassland map, so there is no dry-matter production to animate. Tell the user and do NOT present any video or figures.
+      insufficient_data: |
+        There are not enough frames with data for this area to build a video. Tell the user, suggest the static map or the totals instead, and do NOT present any video or figures.
+      encoder_unavailable: |
+        The video encoder is not available on this server, so the video cannot be produced. Apologize, suggest the static biomass map instead and do NOT present any video.
+      encoding_failed: |
+        The video could not be encoded. Apologize, suggest trying again or using the static biomass map instead, and do NOT present any video; do not give technical details.
+      timeout: |
+        Producing the video took too long and was stopped. Apologize, suggest trying again in a moment or using the static biomass map instead, and do NOT present any video.
+      fallback_reason_fewer_than_two_months: |
+        There are fewer than two usable recent Time2Graze months over this area (months with images covering enough of the area).
+      fallback_reason_months_without_pasture: |
+        The recent Time2Graze months over this area have no productive pasture or too little data (for example in a cold or dry season).
+      earth_engine_unavailable: |
+        The satellite data service is temporarily unavailable. Apologize, say you cannot produce the video right now and do NOT present any figures or videos; suggest trying again later.
+      no_registered_area: |
+        The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
+      area_not_found: |
+        No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
 
@@ -522,3 +569,88 @@ weather_tools:
         No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+
+report_tools:
+  generate_area_bulletin:
+    description: |
+      Generates a shareable PDF bulletin of a registered area that consolidates its location, the pasture map and
+      pasture area, and the dry-matter production map and totals, with method notes and data sources.
+
+      Use this tool when the user asks for a report, bulletin or PDF of an area, or wants to share the analysis.
+      If the user names an area, pass it in `area_name`; if not, the latest registered area is used. The bulletin
+      always uses the defaults of the pasture and biomass tools (pasture of 2022, dry matter of the latest annual
+      year); it takes no year.
+
+      Args:
+          area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
+
+      Returns:
+          ToolResult: The PDF file and a summary of its main figures.
+    results:
+      success: |
+        The PDF bulletin of "{area_name}" was generated and attached as {file_name}. Main figures:
+        {summary}
+        Tell the user the bulletin is ready to share, mention these figures briefly with their period and source, and that the bulletin contains the method notes (production of dry matter is not standing biomass, estimates, no substitute for field verification).
+      partial: |
+        The PDF bulletin of "{area_name}" was generated and attached as {file_name}, but these sections are NOT available and are marked as such in the document: {missing}. Figures available:
+        {summary}
+        Tell the user which sections are missing and why they may be missing (no data or no productive pasture for the area), and do NOT present any figure for them.
+      summary_pasture: |-
+        - Pasture {year}: {pasture_ha} ha of {area_ha} ha
+      summary_biomass: |-
+        - Dry-matter production {period}: mean {mean_t_ha} t DM/ha, total {total_t} t DM
+      no_data: |
+        There is no pasture or dry-matter data for "{area_name}" (the area may have no productive pasture), so no bulletin was generated. Tell the user and do NOT present any figures.
+      no_registered_area: |
+        The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
+      area_not_found: |
+        No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
+      earth_engine_unavailable: |
+        The satellite data service is temporarily unavailable. Apologize, say you cannot produce the bulletin right now and do NOT present any figures; suggest trying again later.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+      pdf_title: "Pasture Bulletin"
+      pdf_generated: "Generated on {date} (UTC)"
+      pdf_section_location: "Location"
+      pdf_loc_center: "Center (lat, lon)"
+      pdf_loc_radius: "Radius"
+      pdf_loc_area: "Area"
+      pdf_section_pasture: "Pasture map and area"
+      pdf_past_year: "Reference year"
+      pdf_past_source: "Source"
+      pdf_past_cultivated: "Cultivated grassland"
+      pdf_past_natural: "Natural/semi-natural grassland"
+      pdf_past_total: "Total pasture"
+      pdf_past_percent: "Share of the area"
+      pdf_section_biomass: "Dry-matter production"
+      pdf_bio_period: "Period"
+      pdf_bio_source: "Source"
+      pdf_bio_mean: "Mean production"
+      pdf_bio_total: "Total production"
+      pdf_bio_pasture_ha: "Productive pasture"
+      pdf_unavailable: "Not available: {reason}"
+      pdf_reason_year: "no data exists for the requested period."
+      pdf_reason_no_pasture: "the area has no productive pasture according to the Global Pasture Watch grassland map."
+      pdf_reason_ee: "the satellite data service is temporarily unavailable."
+      pdf_reason_error: "an unexpected error occurred."
+      pdf_estimate_warning: "Experimental estimate: this pasture map was produced by a Random Forest trained on the fly with Global Pasture Watch labels and Google Satellite Embedding. It is not an official map, can deviate strongly from the real values and may report small amounts of pasture where there is none (arid or urban areas)."
+      pdf_bio_mask_note: "The pasture mask is the Global Pasture Watch grassland map of {mask_year}, the latest available, older than {year}."
+      pdf_bio_partial_note: "Time2Graze data cover only {days} days with partial coverage: the figures are short-period and indicative."
+      pdf_section_method: "Method and limitations"
+      pdf_method_1: "Figures are accumulated dry-matter production of the period (t DM/ha and t DM), not standing biomass nor available forage, and not a stocking capacity."
+      pdf_method_2: "They are estimates from satellite data, converted with a general factor calibrated for cultivated tropical pastures; elsewhere they are only an order of magnitude."
+      pdf_method_3: "Pasture maps for years after 2022 are experimental estimates, not official maps; annual and monthly figures, and different sources, must not be compared as a trend."
+      pdf_method_4: "This bulletin does not replace field verification or local technical advice."
+      pdf_section_sources: "Sources and attributions"
+      pdf_source_gpw: "Global Pasture Watch: grassland classes and annual productivity (global-pasture-watch)."
+      pdf_source_t2g: "Time2Graze: recent 10 m productivity (World Resources Institute)."
+      pdf_source_basemap: "Basemap tiles: {attribution}"
+      pdf_source_app: "Generated by Pasto10, a demonstration of global pasture data built on the Semente framework."
+      pdf_footer: "Pasto10 pasture bulletin - satellite-derived estimates, see the method notes"
+      pdf_fmt_m: "{value} m"
+      pdf_fmt_ha: "{value} ha"
+      pdf_fmt_t_ha: "{value} t DM/ha"
+      pdf_fmt_t: "{value} t DM"
+      pdf_fmt_share: "{percent}% ({ha} ha)"
+      pdf_fmt_period: "{label} ({start} to {end}, {days} d)"
+      pdf_bullet: "- {text}"

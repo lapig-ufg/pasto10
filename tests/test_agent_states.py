@@ -48,7 +48,7 @@ def test_domain_spec_wires_dynamic_callables():
     [
         (None, {
             "start_buffer_registration_by_coordinate", "generate_pasture_map", "get_pasture_area",
-            "generate_biomass_map", "get_biomass_total", *WEATHER_TOOLS, *CALCULATOR_TOOLS,
+            "generate_biomass_map", "get_biomass_total", "generate_biomass_video", *WEATHER_TOOLS, "generate_area_bulletin", *CALCULATOR_TOOLS,
         }),
         ("pending", {"confirm_registration", "cancel_registration"}),
         ("final", {"complete_registration", "cancel_registration"}),

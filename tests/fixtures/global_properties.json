@@ -25,6 +25,157 @@
     }
   },
   {
+    "id": "beni",
+    "name": "Llanos de Moxos",
+    "country": "Bolivia",
+    "continent": "South America",
+    "latitude": -14.0,
+    "longitude": -65.5,
+    "radius_m": 1000,
+    "timezone": "America/La_Paz",
+    "profile": "Seasonally flooded natural savanna grassland of the Beni (Llanos de Moxos)",
+    "kind": "natural",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.9,
+        1
+      ],
+      "dominant_class": "natural",
+      "worldcover": {
+        "grass": [
+          0.8,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "santa_cruz",
+    "name": "Chiquitania",
+    "country": "Bolivia",
+    "continent": "South America",
+    "latitude": -15.5,
+    "longitude": -60.5,
+    "radius_m": 1000,
+    "timezone": "America/La_Paz",
+    "profile": "Cultivated pasture mixed with dry forest in the Chiquitania (Santa Cruz)",
+    "kind": "cultivated",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.65,
+        0.9
+      ],
+      "dominant_class": "cultivated",
+      "worldcover": {
+        "grass": [
+          0.6,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "chaco",
+    "name": "Chaco",
+    "country": "Paraguay",
+    "continent": "South America",
+    "latitude": -22.5,
+    "longitude": -59.5,
+    "radius_m": 1000,
+    "timezone": "America/Asuncion",
+    "profile": "Cultivated pasture of the Paraguayan Chaco cattle belt",
+    "kind": "cultivated",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.8,
+        1
+      ],
+      "dominant_class": "cultivated",
+      "worldcover": {
+        "grass": [
+          0.75,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "llanos_colombia",
+    "name": "Llanos Orientales",
+    "country": "Colombia",
+    "continent": "South America",
+    "latitude": 4.5,
+    "longitude": -72.0,
+    "radius_m": 1000,
+    "timezone": "America/Bogota",
+    "profile": "Savanna of the Llanos Orientales with cultivated and natural grassland and gallery forest",
+    "kind": "cultivated",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.65,
+        0.9
+      ],
+      "dominant_class": "cultivated",
+      "worldcover": {
+        "grass": [
+          0.6,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "cajamarca",
+    "name": "Cajamarca",
+    "country": "Peru",
+    "continent": "South America",
+    "latitude": -7.0,
+    "longitude": -78.3,
+    "radius_m": 1000,
+    "timezone": "America/Lima",
+    "profile": "High-altitude natural pasture of the Andes (above 3000 m)",
+    "kind": "natural",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.85,
+        1
+      ],
+      "dominant_class": "natural",
+      "worldcover": {
+        "grass": [
+          0.8,
+          1
+        ]
+      },
+      "elevation_min_m": 3000
+    }
+  },
+  {
+    "id": "pampas_ar",
+    "name": "Pampa Humeda",
+    "country": "Argentina",
+    "continent": "South America",
+    "latitude": -36.0,
+    "longitude": -60.0,
+    "radius_m": 1000,
+    "timezone": "America/Argentina/Buenos_Aires",
+    "profile": "Mosaic of cropland and natural grassland of the humid Pampas",
+    "kind": "mosaic",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.25,
+        0.5
+      ],
+      "dominant_class": "natural",
+      "worldcover": {
+        "crop": [
+          0.5,
+          1
+        ]
+      }
+    }
+  },
+  {
     "id": "pampas_uy",
     "name": "Pampas",
     "country": "Uruguay",
@@ -44,6 +195,56 @@
       "worldcover": {
         "grass": [
           0.8,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "aysen",
+    "name": "Aysén",
+    "country": "Chile",
+    "continent": "South America",
+    "latitude": -45.6,
+    "longitude": -72.1,
+    "radius_m": 1000,
+    "timezone": "America/Santiago",
+    "profile": "Cultivated pasture and grass steppe of the Aysén valleys (Chilean Patagonia)",
+    "kind": "cultivated",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.4,
+        0.7
+      ],
+      "dominant_class": "cultivated",
+      "worldcover": {
+        "grass": [
+          0.6,
+          0.85
+        ]
+      }
+    }
+  },
+  {
+    "id": "llanos_venezuela",
+    "name": "Llanos de Apure",
+    "country": "Venezuela",
+    "continent": "South America",
+    "latitude": 7.5,
+    "longitude": -69.0,
+    "radius_m": 1000,
+    "timezone": "America/Caracas",
+    "profile": "Flat natural savanna grassland of the Venezuelan Llanos",
+    "kind": "natural",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.9,
+        1
+      ],
+      "dominant_class": "natural",
+      "worldcover": {
+        "grass": [
+          0.9,
           1
         ]
       }
@@ -75,132 +276,6 @@
     }
   },
   {
-    "id": "alberta",
-    "name": "Alberta",
-    "country": "Canada",
-    "continent": "North America",
-    "latitude": 51.0,
-    "longitude": -112.0,
-    "radius_m": 1000,
-    "timezone": "America/Edmonton",
-    "profile": "Natural mixed-grass prairie",
-    "kind": "natural",
-    "expect": {
-      "gpw_2022_pasture_fraction": [
-        0.9,
-        1
-      ],
-      "dominant_class": "natural",
-      "worldcover": {
-        "grass": [
-          0.8,
-          1
-        ]
-      }
-    }
-  },
-  {
-    "id": "ireland",
-    "name": "Ireland",
-    "country": "Ireland",
-    "continent": "Europe",
-    "latitude": 53.0,
-    "longitude": -8.0,
-    "radius_m": 1000,
-    "timezone": "Europe/Dublin",
-    "profile": "Intensively managed temperate pasture",
-    "kind": "cultivated",
-    "expect": {
-      "gpw_2022_pasture_fraction": [
-        0.6,
-        0.85
-      ],
-      "dominant_class": "cultivated",
-      "worldcover": {
-        "grass": [
-          0.5,
-          1
-        ]
-      }
-    }
-  },
-  {
-    "id": "mongolia",
-    "name": "Mongolia",
-    "country": "Mongolia",
-    "continent": "Asia",
-    "latitude": 47.0,
-    "longitude": 108.5,
-    "radius_m": 1000,
-    "timezone": "Asia/Ulaanbaatar",
-    "profile": "Steppe rangeland",
-    "kind": "natural",
-    "expect": {
-      "gpw_2022_pasture_fraction": [
-        0.9,
-        1
-      ],
-      "dominant_class": "natural",
-      "worldcover": {
-        "grass": [
-          0.8,
-          1
-        ]
-      }
-    }
-  },
-  {
-    "id": "kazakhstan",
-    "name": "Kazakhstan",
-    "country": "Kazakhstan",
-    "continent": "Asia",
-    "latitude": 50.0,
-    "longitude": 70.0,
-    "radius_m": 1000,
-    "timezone": "Asia/Almaty",
-    "profile": "Steppe grassland",
-    "kind": "natural",
-    "expect": {
-      "gpw_2022_pasture_fraction": [
-        0.9,
-        1
-      ],
-      "dominant_class": "natural",
-      "worldcover": {
-        "grass": [
-          0.8,
-          1
-        ]
-      }
-    }
-  },
-  {
-    "id": "tibet",
-    "name": "Qinghai-Tibet Plateau",
-    "country": "China",
-    "continent": "Asia",
-    "latitude": 33.0,
-    "longitude": 92.0,
-    "radius_m": 1000,
-    "timezone": "Asia/Shanghai",
-    "profile": "High-altitude alpine grassland (above 4000 m)",
-    "kind": "natural",
-    "expect": {
-      "gpw_2022_pasture_fraction": [
-        0.6,
-        0.9
-      ],
-      "dominant_class": "natural",
-      "worldcover": {
-        "grass": [
-          0.6,
-          1
-        ]
-      },
-      "elevation_min_m": 4000
-    }
-  },
-  {
     "id": "kenya",
     "name": "Kenya",
     "country": "Kenya",
@@ -220,51 +295,6 @@
       "worldcover": {
         "shrub": [
           0.4,
-          1
-        ]
-      }
-    }
-  },
-  {
-    "id": "sahel",
-    "name": "Sahel",
-    "country": "Niger",
-    "continent": "Africa",
-    "latitude": 13.5,
-    "longitude": 2.1,
-    "radius_m": 1000,
-    "timezone": "Africa/Niamey",
-    "profile": "Sahel mosaic of cropland, savanna, settlements and water",
-    "kind": "mosaic",
-    "expect": {
-      "gpw_2022_pasture_fraction": [
-        0.2,
-        0.5
-      ],
-      "dominant_class": "cultivated",
-      "worldcover": {}
-    }
-  },
-  {
-    "id": "south_africa",
-    "name": "Highveld",
-    "country": "South Africa",
-    "continent": "Africa",
-    "latitude": -27.0,
-    "longitude": 28.5,
-    "radius_m": 1000,
-    "timezone": "Africa/Johannesburg",
-    "profile": "Natural highveld grassland",
-    "kind": "natural",
-    "expect": {
-      "gpw_2022_pasture_fraction": [
-        0.8,
-        1
-      ],
-      "dominant_class": "natural",
-      "worldcover": {
-        "grass": [
-          0.7,
           1
         ]
       }
@@ -296,39 +326,14 @@
     }
   },
   {
-    "id": "new_zealand",
-    "name": "New Zealand",
-    "country": "New Zealand",
-    "continent": "Oceania",
-    "latitude": -40.0,
-    "longitude": 175.5,
-    "radius_m": 1000,
-    "timezone": "Pacific/Auckland",
-    "profile": "Intensively grazed temperate pasture",
-    "kind": "cultivated",
-    "expect": {
-      "gpw_2022_pasture_fraction": [
-        0.85,
-        1
-      ],
-      "dominant_class": "cultivated",
-      "worldcover": {
-        "grass": [
-          0.7,
-          1
-        ]
-      }
-    }
-  },
-  {
     "id": "city_control",
-    "name": "São Paulo",
-    "country": "Brazil",
+    "name": "Lima",
+    "country": "Peru",
     "continent": "South America",
-    "latitude": -23.55,
-    "longitude": -46.63,
+    "latitude": -12.05,
+    "longitude": -77.04,
     "radius_m": 1000,
-    "timezone": "America/Sao_Paulo",
+    "timezone": "America/Lima",
     "profile": "Negative control: dense urban area",
     "kind": "control_urban",
     "expect": {
@@ -339,7 +344,7 @@
       "dominant_class": null,
       "worldcover": {
         "built": [
-          0.7,
+          0.9,
           1
         ]
       }
@@ -347,13 +352,13 @@
   },
   {
     "id": "desert_control",
-    "name": "Sahara",
-    "country": "Algeria",
-    "continent": "Africa",
-    "latitude": 25.0,
-    "longitude": 10.0,
+    "name": "Atacama",
+    "country": "Chile",
+    "continent": "South America",
+    "latitude": -23.5,
+    "longitude": -69.0,
     "radius_m": 1000,
-    "timezone": "Africa/Algiers",
+    "timezone": "America/Santiago",
     "profile": "Negative control: hyper-arid desert",
     "kind": "control_desert",
     "expect": {

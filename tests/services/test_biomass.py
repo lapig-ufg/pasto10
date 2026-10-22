@@ -50,14 +50,17 @@ def fake_ee(monkeypatch):
         state["range_calls"] += 1
         return state["range"]
 
-    def reduce(image, roi, scale):
+    def reduce(image, roi, scale, coverage=None):
         state["reduce"].append(scale)
+        if coverage is not None:
+            return {**state["reduced"], "grass": 100.0, "covered": 80.0}
         return state["reduced"]
 
     monkeypatch.setattr(biomass, "_t2g_range_from_ee", range_from_ee)
     monkeypatch.setattr(biomass.pasture, "feature_geometry", lambda feature: "roi")
     monkeypatch.setattr(biomass, "initialize_ee", lambda: None)
     monkeypatch.setattr(biomass, "_mask_image", lambda mask_year: FakeImage())
+    monkeypatch.setattr(biomass, "_coverage_image", lambda raw, mask_year: FakeImage())
     monkeypatch.setattr(biomass, "_gpp_biomass", lambda year: FakeImage())
     monkeypatch.setattr(biomass, "_t2g_biomass", lambda roi, period: FakeImage())
     monkeypatch.setattr(biomass, "_t2g_count", lambda roi, start, end: state["images"])
@@ -248,7 +251,7 @@ def test_results_are_cached_per_geometry_period_and_method(fake_ee):
 
 
 def test_concurrent_requests_measure_once(fake_ee, monkeypatch):
-    def slow(image, roi, scale):
+    def slow(image, roi, scale, coverage=None):
         fake_ee["reduce"].append(scale)
         time.sleep(0.2)
         return fake_ee["reduced"]
@@ -289,3 +292,10 @@ def test_time2graze_end_day_is_inclusive_in_the_day_count(fake_ee):
     assert biomass.BiomassPeriod.days.fget(
         biomass.BiomassPeriod(BiomassSource.GPW_ANNUAL, 2024, None, date(2024, 1, 1), date(2024, 12, 31), 2022, 30, False, "2024")
     ) == 366
+
+
+def test_time2graze_stats_report_the_spatial_data_coverage_and_annual_stats_do_not(fake_ee):
+    monthly = biomass.get_biomass_total(_feature(), None, 7)
+    annual = biomass.get_biomass_total(_feature(), 2020, None)
+
+    assert monthly.data_coverage == 0.8 and annual.data_coverage is None

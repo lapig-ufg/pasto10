@@ -3,7 +3,7 @@ FROM python:3.14-slim
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # git is required for uv to fetch semente-agents from the lapig-ufg/semente
-# repository; ffmpeg is required by the TTS feature (pydub).
+# repository; ffmpeg is required by the TTS feature (pydub) and by the biomass video tool.
 RUN apt-get update && apt-get -y install git ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 

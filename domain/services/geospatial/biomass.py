@@ -23,7 +23,7 @@ import calendar
 import os
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional
+from typing import Callable, Optional
 
 import ee
 
@@ -54,7 +54,7 @@ MIN_PASTURE_FRACTION = 0.01
 MAX_PIXELS = 1e9
 _HECTARE = 10_000.0
 
-METHOD_VERSION = "bm-1"
+METHOD_VERSION = "bm-2"
 _RESULT_CACHE_SIZE = 128
 _RANGE_TTL_SECONDS = 86_400
 _stats_cache = SingleFlightCache(_RESULT_CACHE_SIZE)
@@ -129,12 +129,15 @@ class BiomassImage:
         period (BiomassPeriod): The period behind the image.
         n_images (int, optional): Number of Time2Graze images averaged.
         key (tuple): Stats cache key.
+        coverage (ee.Image, optional): Boolean bands ``grass`` (grassland mask) and ``covered``
+            (grassland with productivity data), to measure the spatial data coverage (Time2Graze only).
     """
 
     image: "ee.Image"
     period: BiomassPeriod
     n_images: Optional[int]
     key: tuple
+    coverage: Optional["ee.Image"] = None
 
 
 def _to_date(milliseconds: float) -> date:
@@ -264,37 +267,61 @@ def _t2g_count(roi: "ee.Geometry", start: date, end: date) -> int:
     return int(_t2g_collection(roi, start, end).size().getInfo())
 
 
-def _t2g_biomass(roi: "ee.Geometry", period: BiomassPeriod) -> "ee.Image":
+def _t2g_biomass(roi: "ee.Geometry", period: BiomassPeriod, days: Optional[int] = None) -> "ee.Image":
     """Returns the Time2Graze dry-matter production (t DM/ha) of the period, band ``biomass``.
 
-    The mean of the images (0.1 gC/m²/day) times the days of the period times
-    ``DRY_MATTER_PER_GC_M2``.
+    The mean of the images (0.1 gC/m²/day) times the days times
+    ``DRY_MATTER_PER_GC_M2``; the days are those of the period unless ``days``
+    is given (the video uses the calendar month, a monthly equivalent).
     """
-    factor = T2G_GC_M2_PER_UNIT_DAY * period.days * DRY_MATTER_PER_GC_M2
+    factor = T2G_GC_M2_PER_UNIT_DAY * (days or period.days) * DRY_MATTER_PER_GC_M2
     return _t2g_collection(roi, period.start, period.end).select(T2G_BAND).mean().multiply(factor).rename("biomass")
 
 
-def _reduce_biomass(image: "ee.Image", roi: "ee.Geometry", scale: int) -> dict:
+def _reduce_biomass(image: "ee.Image", roi: "ee.Geometry", scale: int, coverage: Optional["ee.Image"] = None) -> dict:
     """Measures the masked biomass image inside ``roi`` with one reduction (network).
 
+    Args:
+        image (ee.Image): Masked biomass image (band ``biomass``).
+        roi (ee.Geometry): Area of interest.
+        scale (int): Analysis scale in meters.
+        coverage (ee.Image, optional): Bands ``grass`` and ``covered`` to also sum their hectares.
+
     Returns:
-        dict: ``total`` (t DM), ``valid`` (productive pasture ha), ``area`` (ha)
-        and ``p2``/``p98`` (pixel percentiles, None without valid pixels).
+        dict: ``total`` (t DM), ``valid`` (productive pasture ha), ``area`` (ha),
+        ``p2``/``p98`` (pixel percentiles, None without valid pixels) and, with
+        ``coverage``, ``grass`` and ``covered`` (ha).
     """
     hectares = ee.Image.pixelArea().divide(_HECTARE)
-    stack = ee.Image.cat([
+    bands = [
         image.multiply(hectares).rename("total"),
         hectares.updateMask(image.mask()).rename("valid"),
         hectares.rename("area"),
         image.rename("pixel"),
-    ])
+    ]
     reducer = (
         ee.Reducer.sum().setOutputs(["total"])
         .combine(ee.Reducer.sum().setOutputs(["valid"]), sharedInputs=False)
         .combine(ee.Reducer.sum().setOutputs(["area"]), sharedInputs=False)
         .combine(ee.Reducer.percentile([2, 98], ["p2", "p98"]), sharedInputs=False)
     )
+    if coverage is not None:
+        bands += [coverage.select("grass").multiply(hectares).rename("grass"), coverage.select("covered").multiply(hectares).rename("covered")]
+        reducer = reducer.combine(ee.Reducer.sum().setOutputs(["grass"]), sharedInputs=False).combine(
+            ee.Reducer.sum().setOutputs(["covered"]), sharedInputs=False)
+    stack = ee.Image.cat(bands)
     return stack.reduceRegion(reducer, roi, scale, maxPixels=MAX_PIXELS).getInfo()
+
+
+def _coverage_image(biomass: "ee.Image", mask_year: int) -> "ee.Image":
+    """Returns the boolean bands ``grass`` (grassland mask) and ``covered`` (grassland where the productivity has data)."""
+    grass = _mask_image(mask_year)
+    return ee.Image.cat([grass.rename("grass"), grass.And(biomass.mask()).rename("covered")])
+
+
+def _mask_biomass(biomass: "ee.Image", mask_year: int) -> "ee.Image":
+    """Masks a biomass image to the Global Pasture Watch grassland of ``mask_year`` and positive values."""
+    return biomass.updateMask(_mask_image(mask_year).And(biomass.gt(0)))
 
 
 def _stats_key(geom_key: str, period: BiomassPeriod) -> tuple:
@@ -329,9 +356,10 @@ def build_biomass(feature: Feature, year: Optional[int] = None, month: Optional[
         biomass = _t2g_biomass(roi, period)
     else:
         biomass = _gpp_biomass(period.year)
-    image = biomass.updateMask(_mask_image(period.mask_year).And(biomass.gt(0)))
+    image = _mask_biomass(biomass, period.mask_year)
+    coverage = _coverage_image(biomass, period.mask_year) if period.source is BiomassSource.TIME2GRAZE else None
     log_debug(f"build_biomass: period={period.label}, source={period.source.name}")
-    return BiomassImage(image, period, n_images, _stats_key(pasture.geometry_key(feature), period)), roi
+    return BiomassImage(image, period, n_images, _stats_key(pasture.geometry_key(feature), period), coverage), roi
 
 
 def _disk_cache() -> DiskCache:
@@ -373,18 +401,20 @@ def measure_biomass(biomass: BiomassImage, roi: "ee.Geometry") -> BiomassStats:
     period = biomass.period
 
     def compute() -> BiomassStats:
-        raw = _reduce_biomass(biomass.image, roi, period.scale)
+        raw = _reduce_biomass(biomass.image, roi, period.scale, biomass.coverage)
         valid, area = float(raw.get("valid") or 0.0), float(raw.get("area") or 0.0)
+        grass, covered = float(raw.get("grass") or 0.0), float(raw.get("covered") or 0.0)
         if valid <= 0 or valid < MIN_PASTURE_FRACTION * area:
             raise NoPastureBiomass()
         total = float(raw["total"])
+        coverage = round(covered / grass, 3) if biomass.coverage is not None and grass > 0 else None
         return BiomassStats(
             source=period.source, period_label=period.label, start=period.start.isoformat(),
             end=period.end.isoformat(), mean_t_ha=round(total / valid, 2), total_t=round(total, 2),
             p02_t_ha=round(float(raw["p2"]), 2), p98_t_ha=round(float(raw["p98"]), 2),
             pasture_ha=round(valid, 2), area_ha=round(area, 2), scale_m=period.scale,
             mask_year=period.mask_year, year=period.year, partial=period.partial,
-            n_images=biomass.n_images, days_covered=period.days,
+            n_images=biomass.n_images, days_covered=period.days, data_coverage=coverage,
         )
 
     return _stats_cache.get_or_compute(
@@ -422,3 +452,153 @@ def get_biomass_total(feature: Feature, year: Optional[int] = None, month: Optio
         return cached
     biomass, roi = build_biomass(feature, year, month)
     return measure_biomass(biomass, roi)
+
+
+MIN_FRAME_DAYS = 10
+MIN_FRAME_COVERAGE = 0.25
+MAX_MONTHLY_FRAMES = 24
+DEFAULT_ANNUAL_FRAMES = 10
+MAX_ANNUAL_FRAMES = 12
+
+
+@dataclass(frozen=True)
+class BiomassFrame:
+    """One frame of a biomass time series.
+
+    Attributes:
+        label (str): Reference period (``"2026-07"``, ``"2026-07*"`` when the month is only partly covered, or ``"2021"``).
+        image (BiomassImage): Masked biomass image of the frame (its key is unique to the frame).
+        partial (bool): True for a partly covered month scaled to its calendar days.
+    """
+
+    label: str
+    image: BiomassImage
+    partial: bool = False
+
+
+@dataclass(frozen=True)
+class BiomassSeries:
+    """A biomass time series for a video.
+
+    Attributes:
+        mode (str): ``"monthly"`` (Time2Graze, monthly equivalents) or ``"annual"`` (Global Pasture Watch fallback).
+        reason (str): Why the mode was chosen: ``"time2graze"`` or ``"fewer_than_two_months"``.
+        frames (list[BiomassFrame]): Frames in chronological order.
+        roi (ee.Geometry): The area as an Earth Engine geometry.
+    """
+
+    mode: str
+    reason: str
+    frames: list[BiomassFrame]
+    roi: "ee.Geometry"
+
+
+def _checked_months(
+    roi: "ee.Geometry", today: Optional[date] = None, check: Optional[Callable[[], None]] = None,
+) -> list[tuple[BiomassPeriod, int]]:
+    """Finds the usable Time2Graze months over an area, newest first, with their image counts.
+
+    Months are visited from the most recent backwards and the search stops as
+    soon as ``MAX_MONTHLY_FRAMES`` qualify, so a long Time2Graze history costs
+    no extra Earth Engine calls.
+
+    Args:
+        roi (ee.Geometry): Area of interest.
+        today (date, optional): Upper limit for the months (defaults to today, UTC).
+        check (Callable, optional): Called before each month; may raise to abort (deadline).
+
+    Returns:
+        list[tuple[BiomassPeriod, int]]: (period with covered days, number of images), newest first.
+
+    Raises:
+        EarthEngineUnavailable: If Earth Engine cannot be initialized.
+    """
+    available = t2g_date_range()
+    if available is None:
+        return []
+    limit = min(available[1], today or datetime.now(timezone.utc).date())
+    year, month = limit.year, limit.month
+    found: list[tuple[BiomassPeriod, int]] = []
+    while (year, month) >= (available[0].year, available[0].month) and len(found) < MAX_MONTHLY_FRAMES:
+        if check is not None:
+            check()
+        try:
+            period = resolve_biomass_period(year, month)
+        except BiomassPeriodUnavailable:
+            period = None
+        if period is not None and period.days >= MIN_FRAME_DAYS and period.end <= limit:
+            images = _t2g_count(roi, period.start, period.end)
+            if images > 0:
+                found.append((period, images))
+        year, month = (year - 1, 12) if month == 1 else (year, month - 1)
+    return found
+
+
+def monthly_candidates(roi: "ee.Geometry", today: Optional[date] = None) -> list[BiomassPeriod]:
+    """Lists the Time2Graze months usable as video frames over an area.
+
+    A month qualifies when it lies within the Time2Graze date range up to
+    ``today``, has at least ``MIN_FRAME_DAYS`` covered days and has images over
+    the area. At most the last ``MAX_MONTHLY_FRAMES`` months are kept.
+
+    Args:
+        roi (ee.Geometry): Area of interest.
+        today (date, optional): Upper limit for the months (defaults to today, UTC).
+
+    Returns:
+        list[BiomassPeriod]: Month periods in chronological order (covered days, ``partial`` flagged).
+
+    Raises:
+        EarthEngineUnavailable: If Earth Engine cannot be initialized.
+    """
+    return [period for period, _ in reversed(_checked_months(roi, today))]
+
+
+def _monthly_frame(feature: Feature, roi: "ee.Geometry", period: BiomassPeriod, n_images: int) -> BiomassFrame:
+    """Builds a monthly-equivalent frame: the mean daily production times the days of the calendar month."""
+    calendar_days = calendar.monthrange(period.year, period.month)[1]
+    raw = _t2g_biomass(roi, period, calendar_days)
+    key = _stats_key(pasture.geometry_key(feature), period) + ("monthly-equivalent",)
+    frame_image = BiomassImage(_mask_biomass(raw, period.mask_year), period, n_images, key, _coverage_image(raw, period.mask_year))
+    return BiomassFrame(period.label + ("*" if period.partial else ""), frame_image, period.partial)
+
+
+def build_biomass_series(
+    feature: Feature, years: Optional[int] = None, today: Optional[date] = None, check: Optional[Callable[[], None]] = None,
+    force_annual: bool = False,
+) -> BiomassSeries:
+    """Builds the frames of the biomass video of an area.
+
+    Mode rule: with at least two usable Time2Graze months, one frame per month
+    (monthly equivalents: the mean daily production times the calendar days;
+    partly covered months are flagged with ``*``). Otherwise the fallback is
+    annual: the last ``years`` Global Pasture Watch years (default
+    ``DEFAULT_ANNUAL_FRAMES``, at most ``MAX_ANNUAL_FRAMES``), each with its own
+    grassland mask. The fallback is not monthly.
+
+    Args:
+        feature (Feature): Registered area.
+        years (int, optional): Number of annual frames for the fallback.
+        today (date, optional): Upper limit for the months (defaults to today, UTC).
+        check (Callable, optional): Called between Earth Engine steps; may raise to abort (deadline).
+        force_annual (bool): Skip the monthly mode (used when the monthly frames have no productive pasture).
+
+    Returns:
+        BiomassSeries: Mode, reason and frames in chronological order.
+
+    Raises:
+        EarthEngineUnavailable: If Earth Engine cannot be initialized.
+        BiomassPeriodUnavailable: If an annual frame has no data.
+    """
+    roi = pasture.feature_geometry(feature)
+    months = [] if force_annual else list(reversed(_checked_months(roi, today, check)))
+    if len(months) >= 2:
+        return BiomassSeries("monthly", "time2graze", [_monthly_frame(feature, roi, period, images) for period, images in months], roi)
+    count = max(2, min(years or DEFAULT_ANNUAL_FRAMES, MAX_ANNUAL_FRAMES))
+    frames = []
+    for year in range(GPP_LAST_YEAR - count + 1, GPP_LAST_YEAR + 1):
+        if check is not None:
+            check()
+        biomass, _ = build_biomass(feature, year, None)
+        frames.append(BiomassFrame(str(year), biomass))
+    return BiomassSeries("annual", "months_without_pasture" if force_annual else "fewer_than_two_months", frames, roi)

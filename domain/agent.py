@@ -19,7 +19,8 @@ from domain.tools.property_tools import (
     confirm_registration,
     start_buffer_registration_by_coordinate,
 )
-from domain.tools.biomass_tools import generate_biomass_map, get_biomass_total
+from domain.tools.biomass_tools import generate_biomass_map, generate_biomass_video, get_biomass_total
+from domain.tools.report_tools import generate_area_bulletin
 from domain.tools.pasture_tools import generate_pasture_map, get_pasture_area
 from domain.tools.weather_tools import (
     get_daily_precipitation_forecast,
@@ -47,8 +48,8 @@ def get_tools(run_context: RunContext) -> list:
       (``complete_registration``, ``cancel_registration``).
     - otherwise (default): a new area can be registered and registered areas analyzed
       (``start_buffer_registration_by_coordinate``, ``generate_pasture_map``,
-      ``get_pasture_area``, ``generate_biomass_map``, ``get_biomass_total``,
-      the five weather tools and the ``Calculator`` toolkit).
+      ``get_pasture_area``, ``generate_biomass_map``, ``get_biomass_total``, ``generate_biomass_video``,
+      the five weather tools, ``generate_area_bulletin`` and the ``Calculator`` toolkit).
 
     Args:
         run_context (RunContext): The run context holding ``session_state``.
@@ -69,11 +70,13 @@ def get_tools(run_context: RunContext) -> list:
         get_pasture_area,
         generate_biomass_map,
         get_biomass_total,
+        generate_biomass_video,
         get_monthly_precipitation_forecast,
         get_daily_precipitation_forecast,
         get_rain_season_onset_forecast,
         get_dry_season_onset_forecast,
         get_temperature_forecast,
+        generate_area_bulletin,
         Calculator(exclude_tools=["is_prime", "factorial"]),
     ]
 

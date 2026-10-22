@@ -67,6 +67,12 @@ class BiomassStats(BaseModel):
 
     days_covered: int = Field(..., description="Number of days of the accumulation.", examples=[365])
 
+    data_coverage: Optional[float] = Field(
+        default=None,
+        description="Share (0-1) of the grassland area of the registered area that has productivity data (Time2Graze only; None for annual data).",
+        examples=[0.19],
+    )
+
     @property
     def pasture_percent(self) -> float:
         """Share of the analyzed area that is productive pasture, in percent (0 when the area is empty)."""
