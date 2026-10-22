@@ -235,7 +235,7 @@ pasture_tools:
         - Natural/semi-natural grassland: {natural_ha} ha
         The map image was sent to the user. Describe it briefly: state the year and the data source,
         and give the pasture area in hectares. Remember that this is satellite-derived and does not replace field verification.
-        If the source is the Pasto10 classification, this is an experimental estimate, not an official map and not a measurement: state that clearly, present the figures only as an order of magnitude, say that it can diverge a lot from one year to the next and from the official map (differences observed in tests reached several times the value), do not compare it with earlier years as a trend, and recommend 2022 (the latest Global Pasture Watch year) as the reliable reference.
+        If the source is the Pasto10 classification, this is an experimental estimate, not an official map and not a measurement: state that clearly, present the figures only as an order of magnitude, say that it can diverge a lot from one year to the next and from the official map (in a validation against official maps, about 90% of the pixels agreed on average, but some areas deviated by several times the official pasture area), do not compare it with earlier years as a trend, and recommend 2022 (the latest Global Pasture Watch year) as the reliable reference.
       no_registered_area: |
         The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
       area_not_found: |
@@ -270,7 +270,7 @@ pasture_tools:
         - Natural/semi-natural grassland: {natural_ha} ha
         Report the figures to the user in plain language, always stating the year and the data source.
         Remember that this is satellite-derived and does not replace field verification.
-        If the source is the Pasto10 classification, this is an experimental estimate, not an official map and not a measurement: state that clearly, present the figures only as an order of magnitude, say that it can diverge a lot from one year to the next and from the official map (differences observed in tests reached several times the value), do not compare it with earlier years as a trend, and recommend 2022 (the latest Global Pasture Watch year) as the reliable reference.
+        If the source is the Pasto10 classification, this is an experimental estimate, not an official map and not a measurement: state that clearly, present the figures only as an order of magnitude, say that it can diverge a lot from one year to the next and from the official map (in a validation against official maps, about 90% of the pixels agreed on average, but some areas deviated by several times the official pasture area), do not compare it with earlier years as a trend, and recommend 2022 (the latest Global Pasture Watch year) as the reliable reference.
       no_registered_area: |
         The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
       area_not_found: |

@@ -22,13 +22,30 @@ Pasto10 reads these maps through Google Earth Engine:
 | Years | Source | How it is used |
 | --- | --- | --- |
 | 2000-2022 | Global Pasture Watch grassland classes (`ggc-30m/v1/grassland_c`, 30 m) | Used as published: cultivated grassland, natural/semi-natural grassland and non-grassland. |
-| After 2022 | [Google Satellite Embedding](https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_SATELLITE_EMBEDDING_V1_ANNUAL) (AlphaEarth, 10 m) | No published map exists yet: a Random Forest (100 trees, 300 samples per class, fixed seed) is trained on the fly with the 2022 Global Pasture Watch classes (`ggc-30m/v1-1`) and applied to the embedding of the requested year. The result is an estimate, not an official map and can vary strongly from year to year. |
+| After 2022 | [Google Satellite Embedding](https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_SATELLITE_EMBEDDING_V1_ANNUAL) (AlphaEarth, 10 m) | No published v1 map exists: a Random Forest (100 trees, 300 samples per class and year, fixed seed) is trained on the fly, around the registered area, with the Global Pasture Watch v1-1 classes of the three previous years (2023 uses 2020-2022, 2024 uses 2021-2023, later years use 2022-2024) and the embedding of the same years, then applied to the embedding of the requested year. |
 
-Cells that Global Pasture Watch leaves without data (water, bare ground, dense urban areas) are counted as non-grassland, so the analyzed area equals the whole registered area.
+This is a demonstration of how to combine global datasets, not a production-grade product: each country would improve it with its own policies and registries. Cells that Global Pasture Watch leaves without data are counted as non-grassland, so the analyzed area equals the whole registered area.
 
-When no year is given the tools use 2022, the latest Global Pasture Watch map; a later year must be requested explicitly and always returns an experimental estimate. The estimate is trained once per area and cached per process, so repeated requests report the same figures until restart.
+When no year is given the tools use 2022, the latest published Global Pasture Watch v1 map; a later year must be requested explicitly and always returns an experimental estimate. Pasture area is the sum of cultivated and natural/semi-natural grassland, in hectares inside the registered area. Time2Graze is not yet integrated into the pasture tools.
 
-Pasture area is the sum of cultivated and natural/semi-natural grassland, measured in hectares inside the registered area. Time2Graze is not yet integrated into the pasture tools. Figures for 2000-2022 (Global Pasture Watch v1) and for later years (classification trained on v1-1 / 2022, different resolution) must not be compared directly as a trend. Known limitation: the classifier is trained on a single year (2022) and applied to the embeddings of other years, so estimates after 2022 can swing widely between years (in tests, the same 1 km area varied from about 1 to 60 ha in consecutive years) and, being trained with balanced classes, tend to overestimate pasture in the training year. In tests the estimate differed from the official map and between years by several times the value. Larger or differently weighted training samples did not make it stable, so treat post-2022 figures as indicative only. Satellite-derived figures support decisions but do not replace field verification.
+### Validation of the post-2022 estimate
+
+The v1-1 collection has labels for 2023 and 2024, so the estimate can be checked against official maps (`tools/benchmark_pasture.py`, 27 sites of 2 km radius on all continents, never training on the evaluated year, pasture versus not pasture at 30 m):
+
+| Design | Accuracy | F1 (pasture) | Median relative error of pasture ha | Mean relative error |
+| --- | --- | --- | --- | --- |
+| Single year (2022) labels | 0.88 | 0.79 | 0.13 | 0.41 |
+| Three previous years (adopted) | 0.90 | 0.83 | 0.10 | 0.46 |
+
+(Relative error is `|estimate - official| / max(official, 2% of the area)`.) The three-year window improved accuracy, F1 and the median error, but the mean relative error got worse (0.41 to 0.46) because a few areas deviate strongly. On average the estimate agrees with the official map on about 90% of the pixels, but individual areas deviate strongly (for example a wetland mosaic in the Argentine Pampas: official 29 ha, estimate about 310 ha; on the 15 fixed test properties, Queensland 2023 was the worst case: official 896 ha, estimate 86 ha). Pooling several years, balancing classes differently, larger training regions and regularization were also tried: none beat the three-year window by a clear margin, so the simpler design was kept. On the 15 fixed test properties the mean accuracy was 0.88 and the median relative error 0.09. The estimate is therefore good as an order of magnitude and never as a measurement; for this reason the default year stays 2022 and the figures of 2022 and of later years must not be compared as a trend (different source and resolution, 30 m versus 10 m).
+
+### Masked pixels of Global Pasture Watch
+
+Global Pasture Watch leaves its class band masked where its model did not run (water, bare ground, dense urban areas). `tools/check_gpw_mask.py` compares those pixels with ESA WorldCover 2021 over 27 buffers on all continents: 74.5% of the masked pixels are built-up, bare, snow or water, 1.6% are WorldCover grassland, and only 1.0% of all WorldCover grassland is masked; the remainder is tree, shrub or cropland. Masked therefore means not grassland, and Pasto10 counts it as class 0.
+
+### Caches
+
+Results are cached per process (areas, trained forests and the latest embedding year for an hour), and concurrent requests for the same geometry and year compute only once. Because the forest is not bit-for-bit reproducible, the first estimate of a year is kept until the process restarts. Set `PASTO10_CACHE_DIR` to a writable directory to also keep results on disk between runs (off by default; entries are keyed by geometry, year, source and method version).
 
 Both map portfolios are developed with contributions from [LAPIG/UFG](https://lapig.iesa.ufg.br/), the Image Processing and Geoprocessing Laboratory of the Federal University of Goiás, which maintains this repository.
 
@@ -50,9 +67,18 @@ The pasture map and area tools need an Earth Engine project and a service accoun
 
 Earth Engine is initialized lazily on the first pasture request, never at import. Without these variables the tools answer that the satellite data service is unavailable.
 
-### End-to-end test
+### Test properties and end-to-end tests
 
-`uv run pytest` skips the real Earth Engine test. With the `GEE_*` variables exported, run `uv run pytest -m e2e -s`: it analyzes a 500 m buffer at (-15.5, -47.5) for 2020 (Global Pasture Watch) and 2024 (classification), prints the timings and, when `PASTO10_E2E_OUT` points to a directory, saves the maps there.
+`tests/fixtures/global_properties.json` (loader `tests/fixtures/global_properties.py`) fixes 15 properties around the world: cultivated pasture (Goiás, Ireland, Queensland, New Zealand), natural grassland and steppe (Uruguay, Alberta, Mongolia, Kazakhstan, South African highveld, Kenyan savanna, Qinghai-Tibet Plateau), mosaics (Kansas, Sahel) and two negative controls (São Paulo, Sahara). The e2e test checks that each point really has its described profile against independent assets (GPW v1, ESA WorldCover, SRTM elevation).
+
+`uv run pytest` skips the real Earth Engine tests. With the `GEE_*` variables exported run:
+
+```
+uv run pytest -m e2e -s                                # everything
+uv run pytest -m e2e -s tests/e2e/test_generalist_e2e.py -k tools_over   # the 15 properties, prints a summary table
+PASTO10_E2E_OUT=/some/dir uv run pytest -m e2e -s      # also saves the generated maps
+uv run python tools/benchmark_pasture.py --designs slide3 --out bench.jsonl   # validation against v1-1
+```
 
 ### Basemap providers
 

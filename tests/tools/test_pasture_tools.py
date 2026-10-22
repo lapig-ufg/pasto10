@@ -41,7 +41,7 @@ def fake_service(monkeypatch):
 
     def classify(feature, year):
         calls.append((feature.get_metadata("center"), year))
-        return PastureClassification("image", year or 2020, PastureSource.GPW, 30), "roi"
+        return PastureClassification("image", year or 2020, PastureSource.GPW, 30, ("g", year, "s", "v")), "roi"
 
     def measure_area(feature, year):
         calls.append((feature.get_metadata("center"), year))

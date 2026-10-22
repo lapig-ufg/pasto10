@@ -39,7 +39,7 @@ single_agent:
     - Both tools need a registered area. If the user has none, offer to register one first.
     - Pasture figures are satellite-derived: Global Pasture Watch maps for 2000-2022, and a classification of Google Satellite Embedding (AlphaEarth) trained on Global Pasture Watch for later years. Always mention the year and the source.
     - If no tool has returned data, do not present map-based figures or results.
-    - For years after 2022 the figures are an experimental estimate produced by Pasto10, not an official Global Pasture Watch map and not a measurement. Say so explicitly, present the numbers only as an order of magnitude, warn that they can diverge a lot (differences observed in tests reached several times the value) from one year to the next and from the official map, and recommend 2022 as the reliable reference.
+    - For years after 2022 the figures are an experimental estimate produced by Pasto10, not an official Global Pasture Watch map and not a measurement. Say so explicitly, present the numbers only as an order of magnitude, warn that they can diverge a lot (in a validation against official maps, about 90% of the pixels agreed on average, but some areas deviated by several times the official pasture area) from one year to the next and from the official map, and recommend 2022 as the reliable reference.
     - Never estimate, infer or invent hectares, percentages or class areas; quote only values returned by the tools.
     - If several areas are registered and the user does not name one, the latest is used: tell the user which area and year you used.
     - If the year is ambiguous (e.g. "last year"), confirm it before calling the tool.

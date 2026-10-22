@@ -1,0 +1,358 @@
+[
+  {
+    "id": "goias",
+    "name": "Goiás",
+    "country": "Brazil",
+    "continent": "South America",
+    "latitude": -15.5,
+    "longitude": -47.5,
+    "radius_m": 1000,
+    "profile": "Cultivated pasture in the Cerrado, mixed with cropland and shrubland",
+    "kind": "cultivated",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.5,
+        0.8
+      ],
+      "dominant_class": "cultivated",
+      "worldcover": {
+        "grass": [
+          0.3,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "pampas_uy",
+    "name": "Pampas",
+    "country": "Uruguay",
+    "continent": "South America",
+    "latitude": -33.0,
+    "longitude": -56.0,
+    "radius_m": 1000,
+    "profile": "Natural temperate grassland (Pampas) used for grazing",
+    "kind": "natural",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.9,
+        1
+      ],
+      "dominant_class": "natural",
+      "worldcover": {
+        "grass": [
+          0.8,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "kansas",
+    "name": "Kansas",
+    "country": "United States",
+    "continent": "North America",
+    "latitude": 38.5,
+    "longitude": -99.0,
+    "radius_m": 1000,
+    "profile": "Cropland and rangeland mosaic of the Great Plains",
+    "kind": "mosaic",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.15,
+        0.4
+      ],
+      "dominant_class": "cultivated",
+      "worldcover": {
+        "crop": [
+          0.5,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "alberta",
+    "name": "Alberta",
+    "country": "Canada",
+    "continent": "North America",
+    "latitude": 51.0,
+    "longitude": -112.0,
+    "radius_m": 1000,
+    "profile": "Natural mixed-grass prairie",
+    "kind": "natural",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.9,
+        1
+      ],
+      "dominant_class": "natural",
+      "worldcover": {
+        "grass": [
+          0.8,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "ireland",
+    "name": "Ireland",
+    "country": "Ireland",
+    "continent": "Europe",
+    "latitude": 53.0,
+    "longitude": -8.0,
+    "radius_m": 1000,
+    "profile": "Intensively managed temperate pasture",
+    "kind": "cultivated",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.6,
+        0.85
+      ],
+      "dominant_class": "cultivated",
+      "worldcover": {
+        "grass": [
+          0.5,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "mongolia",
+    "name": "Mongolia",
+    "country": "Mongolia",
+    "continent": "Asia",
+    "latitude": 47.0,
+    "longitude": 108.5,
+    "radius_m": 1000,
+    "profile": "Steppe rangeland",
+    "kind": "natural",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.9,
+        1
+      ],
+      "dominant_class": "natural",
+      "worldcover": {
+        "grass": [
+          0.8,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "kazakhstan",
+    "name": "Kazakhstan",
+    "country": "Kazakhstan",
+    "continent": "Asia",
+    "latitude": 50.0,
+    "longitude": 70.0,
+    "radius_m": 1000,
+    "profile": "Steppe grassland",
+    "kind": "natural",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.9,
+        1
+      ],
+      "dominant_class": "natural",
+      "worldcover": {
+        "grass": [
+          0.8,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "tibet",
+    "name": "Qinghai-Tibet Plateau",
+    "country": "China",
+    "continent": "Asia",
+    "latitude": 33.0,
+    "longitude": 92.0,
+    "radius_m": 1000,
+    "profile": "High-altitude alpine grassland (above 4000 m)",
+    "kind": "natural",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.6,
+        0.9
+      ],
+      "dominant_class": "natural",
+      "worldcover": {
+        "grass": [
+          0.6,
+          1
+        ]
+      },
+      "elevation_min_m": 4000
+    }
+  },
+  {
+    "id": "kenya",
+    "name": "Kenya",
+    "country": "Kenya",
+    "continent": "Africa",
+    "latitude": -2.0,
+    "longitude": 37.0,
+    "radius_m": 1000,
+    "profile": "Savanna rangeland with shrubs and grasses",
+    "kind": "natural",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.85,
+        1
+      ],
+      "dominant_class": "natural",
+      "worldcover": {
+        "shrub": [
+          0.4,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "sahel",
+    "name": "Sahel",
+    "country": "Niger",
+    "continent": "Africa",
+    "latitude": 13.5,
+    "longitude": 2.1,
+    "radius_m": 1000,
+    "profile": "Sahel mosaic of cropland, savanna, settlements and water",
+    "kind": "mosaic",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.2,
+        0.5
+      ],
+      "dominant_class": "cultivated",
+      "worldcover": {}
+    }
+  },
+  {
+    "id": "south_africa",
+    "name": "Highveld",
+    "country": "South Africa",
+    "continent": "Africa",
+    "latitude": -27.0,
+    "longitude": 28.5,
+    "radius_m": 1000,
+    "profile": "Natural highveld grassland",
+    "kind": "natural",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.8,
+        1
+      ],
+      "dominant_class": "natural",
+      "worldcover": {
+        "grass": [
+          0.7,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "queensland",
+    "name": "Queensland",
+    "country": "Australia",
+    "continent": "Oceania",
+    "latitude": -27.5,
+    "longitude": 150.0,
+    "radius_m": 1000,
+    "profile": "Improved pasture and woodland in the Australian savanna belt",
+    "kind": "cultivated",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.65,
+        0.9
+      ],
+      "dominant_class": "cultivated",
+      "worldcover": {
+        "grass": [
+          0.6,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "new_zealand",
+    "name": "New Zealand",
+    "country": "New Zealand",
+    "continent": "Oceania",
+    "latitude": -40.0,
+    "longitude": 175.5,
+    "radius_m": 1000,
+    "profile": "Intensively grazed temperate pasture",
+    "kind": "cultivated",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0.85,
+        1
+      ],
+      "dominant_class": "cultivated",
+      "worldcover": {
+        "grass": [
+          0.7,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "city_control",
+    "name": "São Paulo",
+    "country": "Brazil",
+    "continent": "South America",
+    "latitude": -23.55,
+    "longitude": -46.63,
+    "radius_m": 1000,
+    "profile": "Negative control: dense urban area",
+    "kind": "control_urban",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0,
+        0.02
+      ],
+      "dominant_class": null,
+      "worldcover": {
+        "built": [
+          0.7,
+          1
+        ]
+      }
+    }
+  },
+  {
+    "id": "desert_control",
+    "name": "Sahara",
+    "country": "Algeria",
+    "continent": "Africa",
+    "latitude": 25.0,
+    "longitude": 10.0,
+    "radius_m": 1000,
+    "profile": "Negative control: hyper-arid desert",
+    "kind": "control_desert",
+    "expect": {
+      "gpw_2022_pasture_fraction": [
+        0,
+        0.02
+      ],
+      "dominant_class": null,
+      "worldcover": {
+        "bare": [
+          0.9,
+          1
+        ]
+      }
+    }
+  }
+]
