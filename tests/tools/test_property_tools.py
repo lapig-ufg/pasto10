@@ -284,7 +284,7 @@ def test_geometry_failure_returns_generic_error_and_keeps_state(monkeypatch, cap
 
 
 def test_render_failure_hides_details_from_model_and_keeps_state(monkeypatch, caplog):
-    def broken(feature):
+    def broken(feature, **kwargs):
         raise RuntimeError("secret-detail")
 
     monkeypatch.setattr(property_tools, "render_buffer_image", broken)
@@ -317,11 +317,11 @@ def test_confirm_with_invalid_candidate_keeps_state_and_hides_details(caplog):
     assert run_context.session_state == before
 
 
-def test_cancelled_text_asks_to_confirm_a_new_radius_or_location():
+def test_cancelled_text_mentions_the_cancellation_once_and_continues_with_the_request():
     result = property_tools.cancel_registration(run_context=_pending_context())
 
-    assert "repeat the new value back" in result.content
-    assert "confirm" in result.content
+    assert "at most once" in result.content and "continue with what the user asked next" in result.content
+    assert "repeat the new value back" not in result.content
 
 
 def test_summarize_feature_without_template_hides_internal_markers(monkeypatch):
@@ -352,7 +352,7 @@ def test_summarize_feature_without_center_or_radius_hides_internal_markers():
     assert feature.id not in summary
     for marker in INTERNAL_MARKERS:
         assert marker not in summary
-    assert summary == f"circular area · {feature.total_area} ha"
+    assert summary == f"approximate circular area (not a real property boundary) · {feature.total_area} ha"
 
 
 @pytest.mark.parametrize("name", [None, "North Paddock"])
@@ -365,7 +365,7 @@ def test_summary_failure_leaves_session_state_untouched(monkeypatch, tool_name, 
     run_context.session_state["all_properties"] = {"features": []}
     before = copy.deepcopy(run_context.session_state)
 
-    def broken(feature):
+    def broken(feature, **kwargs):
         raise RuntimeError("summary-boom")
 
     monkeypatch.setattr(property_tools, "summarize_feature", broken)
@@ -395,7 +395,7 @@ def _assert_start_failed_atomically(result, run_context, before):
 
 
 def test_start_summary_failure_keeps_previous_state(monkeypatch):
-    def broken(feature):
+    def broken(feature, **kwargs):
         raise RuntimeError("summary-boom")
 
     monkeypatch.setattr(property_tools, "summarize_feature", broken)
@@ -434,7 +434,7 @@ def test_summarize_feature_without_total_area_uses_safe_summary():
     summary = feature_utils.summarize_feature(feature)
 
     assert "None" not in summary
-    assert summary == "circular area"
+    assert summary == "approximate circular area (not a real property boundary)"
 
 
 def test_summarize_feature_with_unknown_placeholder_uses_safe_summary(monkeypatch):

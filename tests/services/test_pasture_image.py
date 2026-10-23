@@ -140,3 +140,16 @@ def test_overlay_request_never_exceeds_the_output_size(monkeypatch):
     pasture_image._fetch_overlay(FakeImage(), (0, 0, 100000, 100000), (640, 640), 10)
 
     assert seen["dimensions"] == "640x640"
+
+
+def test_the_legend_shows_both_class_names_completely_inside_the_image():
+    from PIL import ImageChops
+
+    blank = Image.new("RGB", (640, 640), (60, 60, 60))
+
+    drawn = pasture_image._draw_legend(blank, bottom=590)
+    box = ImageChops.difference(blank, drawn).getbbox()
+
+    assert box is not None and box[2] < 640 * 0.6 and box[3] <= 591 and box[0] >= 0
+    longest = max(len(label) for label, _ in pasture_image._LEGEND_ENTRIES)
+    assert longest > 20  # the full "Natural/semi-natural grassland" name must fit in that box

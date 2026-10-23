@@ -12,6 +12,7 @@ from domain.services.geospatial.geometry import build_buffered_area
 from domain.utils.feature_utils import set_registered_features, summarize_feature
 from domain.schemas.feature import FeatureMetadata, RegisteredFeatures
 
+STARTERS = {"find_property_candidates", "find_property_by_registry_id", "register_polygon", "start_buffer_registration_by_coordinate"}
 WEATHER_TOOLS = {
     "get_monthly_precipitation_forecast", "get_daily_precipitation_forecast", "get_rain_season_onset_forecast",
     "get_dry_season_onset_forecast", "get_temperature_forecast",
@@ -47,11 +48,12 @@ def test_domain_spec_wires_dynamic_callables():
     "registration_state, expected",
     [
         (None, {
-            "start_buffer_registration_by_coordinate", "generate_pasture_map", "get_pasture_area",
+            "find_property_candidates", "find_property_by_registry_id", "register_polygon", "start_buffer_registration_by_coordinate", "generate_pasture_map", "get_pasture_area",
             "generate_biomass_map", "get_biomass_total", "generate_biomass_video", *WEATHER_TOOLS, "generate_area_bulletin", *CALCULATOR_TOOLS,
         }),
-        ("pending", {"confirm_registration", "cancel_registration"}),
-        ("final", {"complete_registration", "cancel_registration"}),
+        ("choosing", {"select_candidate", "cancel_registration", *STARTERS}),
+        ("pending", {"confirm_registration", "cancel_registration", *STARTERS}),
+        ("final", {"complete_registration", "cancel_registration", *STARTERS}),
     ],
 )
 def test_tools_per_state(registration_state, expected):
@@ -78,22 +80,36 @@ def test_pending_and_final_instructions_describe_candidate(registration_state):
     assert instructions.endswith(OUTPUT_CONTRACT)
 
 
-def test_feature_type_display_name_is_circular_area():
-    assert _agent_config["feature_type_names"]["buffer_area"] == "circular area"
+def test_feature_type_display_names_say_what_the_geometry_is():
+    names = _agent_config["feature_type_names"]
+
+    assert names["buffer_area"] == "approximate circular area (not a real property boundary)"
+    assert names["registered_boundary"] == "registered property boundary"
+    assert "may not be a farm" in names["osm_landuse"] and names["user_polygon"] == "user-provided polygon"
 
 
-def test_pending_instructions_handle_radius_or_location_change():
+def test_pending_instructions_switch_flows_in_the_same_reply_without_narrating_cancellations():
     pending = _agent_config["instructions_pending_single"]
 
     assert "different radius" in pending and "location" in pending
-    assert "call `cancel_registration`, then repeat the new value back to the user" in pending
-    assert "ask them to confirm" in pending
+    assert "call `start_buffer_registration_by_coordinate` with the new values right away" in pending
+    assert "IN THE SAME REPLY" in pending and 'Never write "one moment"' in pending
+    assert "do not narrate a cancellation" in pending and "CURRENT message" in pending
+
+
+@pytest.mark.parametrize("key", ["instructions_pending_single", "instructions_final", "instructions_choosing"])
+def test_every_registration_state_lets_the_user_switch_to_another_area(key):
+    text = _agent_config[key]
+
+    for tool in ("find_property_candidates", "register_polygon", "find_property_by_registry_id", "start_buffer_registration_by_coordinate"):
+        assert tool in text
+    assert "IN THE SAME REPLY" in text
 
 
 def test_default_instructions_call_tool_directly_and_convert_dms():
     default = _agent_config["instructions_default"]
 
-    assert "explicitly asks to register an area" in default
+    assert "explicitly asks to register an approximate circle" in default
     assert "right away" in default
     assert "|D| + M/60 + S/3600" in default
     assert "negative for S/W (or when D is already negative)" in default
@@ -116,7 +132,7 @@ def test_default_instructions_hide_feature_ids_and_type_keys():
 
     assert "Never show feature IDs" in default
     assert "buffer_area" in default
-    assert "refer to areas by name, location, radius and size (ha)" in default
+    assert "refer to areas by name, location, origin label and size (ha)" in default
 
 
 def test_final_instructions_without_candidate_use_fallback():

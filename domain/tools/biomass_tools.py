@@ -35,7 +35,7 @@ from domain.services.geospatial.biomass_video import (
     generate_biomass_video as render_video,
 )
 from domain.services.geospatial.gee import EarthEngineUnavailable
-from domain.utils.tool_utils import area_label, lookup_area, unexpected_error
+from domain.utils.tool_utils import area_label, area_notes, latest_area_note, lookup_area, unexpected_error, with_note
 
 _COMPONENT = "biomass_tools"
 
@@ -52,10 +52,10 @@ def _success_text(tool_key: str, feature: Feature, stats: BiomassStats) -> str:
         _COMPONENT, tool_key, "success",
         area_name=area_label(feature), period=stats.period_label, source=stats.source.value,
         start=stats.start, end=stats.end, days=stats.days_covered, mean_t_ha=stats.mean_t_ha,
-        total_t=stats.total_t, pasture_ha=stats.pasture_ha, area_ha=stats.area_ha,
+        total_t=stats.total_t, pasture_ha=f"{stats.pasture_ha:.1f}", area_ha=f"{stats.area_ha:.1f}",
         pasture_percent=stats.pasture_percent, scale_m=stats.scale_m,
     )
-    notes = []
+    notes = area_notes(_COMPONENT, tool_key, feature, stats.area_ha)
     if stats.mask_year < stats.year:
         notes.append(get_tool_result_text(_COMPONENT, tool_key, "note_mask_year", mask_year=stats.mask_year, year=stats.year))
     if stats.source is BiomassSource.TIME2GRAZE:
@@ -135,7 +135,7 @@ def generate_biomass_map(
         stats = measure_biomass(biomass, roi)
         rendered = render_biomass_map(feature, biomass.image, stats)
         image = Image(content=rendered.content, format=rendered.format, mime_type=rendered.mime_type)
-        return ToolResult(content=_success_text(tool_key, feature, stats), images=[image])
+        return ToolResult(content=with_note(_success_text(tool_key, feature, stats), latest_area_note(run_context, area_name, feature)), images=[image])
     except Exception as error:
         return _handle_known_errors(error, tool_key, feature)
 
@@ -168,7 +168,7 @@ def get_biomass_total(
         feature, failure = lookup_area(run_context, area_name, _COMPONENT, tool_key)
         if failure is not None:
             return failure
-        return ToolResult(content=_success_text(tool_key, feature, measure_total(feature, year, month)))
+        return ToolResult(content=with_note(_success_text(tool_key, feature, measure_total(feature, year, month)), latest_area_note(run_context, area_name, feature)))
     except Exception as error:
         return _handle_known_errors(error, tool_key, feature)
 
@@ -215,7 +215,7 @@ def generate_biomass_video(run_context: RunContext, area_name: Optional[str] = N
             content=video.content, format=video.format, mime_type=video.mime_type, duration=video.duration,
             width=video.width, height=video.height, fps=video.fps,
         )
-        return ToolResult(content=content, videos=[media])
+        return ToolResult(content=with_note(content, latest_area_note(run_context, area_name, feature)), videos=[media])
     except NoPastureBiomass:
         return ToolResult(content=get_tool_result_text(_COMPONENT, tool_key, "no_pasture", area_name=area_label(feature) if feature else ""))
     except BiomassPeriodUnavailable as error:

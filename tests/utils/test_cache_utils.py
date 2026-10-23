@@ -143,3 +143,17 @@ def test_disk_cache_swallows_unserializable_payload_and_leaves_no_temp_file(tmp_
 
     assert cache.load("k") is None
     assert list(tmp_path.iterdir()) == []
+
+
+def test_disk_cache_entries_expire_by_modification_time(tmp_path):
+    import os
+
+    cache = DiskCache(str(tmp_path), ttl=3600)
+    cache.store("k", {"x": 1})
+    path = next(tmp_path.glob("*.json"))
+
+    assert cache.load("k") == {"x": 1}
+    old = time.time() - 7200
+    os.utime(path, (old, old))
+    assert cache.load("k") is None
+    assert DiskCache(str(tmp_path)).load("k") == {"x": 1}

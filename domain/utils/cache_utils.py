@@ -156,14 +156,17 @@ class DiskCache:
     numbers and enums do; objects with memory addresses do not).
     """
 
-    def __init__(self, directory: Optional[str]):
+    def __init__(self, directory: Optional[str], ttl: Optional[float] = None):
         """Creates the cache.
 
         Args:
             directory (str, optional): Cache directory (created on first write);
                 None or empty disables the cache.
+            ttl (float, optional): Seconds a file stays valid, judged by its modification time
+                when it is read; None keeps files forever.
         """
         self.directory = Path(directory).expanduser() if directory else None
+        self.ttl = ttl
 
     @property
     def enabled(self) -> bool:
@@ -182,12 +185,15 @@ class DiskCache:
 
         Returns:
             dict | None: The stored payload, or None on a miss, a disabled
-            cache or an unreadable file.
+            cache, an expired entry (older than ``ttl``) or an unreadable file.
         """
         if not self.enabled:
             return None
         try:
-            return json.loads(self._path(key).read_text(encoding="utf-8"))["payload"]
+            path = self._path(key)
+            if self.ttl is not None and time.time() - path.stat().st_mtime > self.ttl:
+                return None
+            return json.loads(path.read_text(encoding="utf-8"))["payload"]
         except (OSError, ValueError, KeyError, TypeError):
             return None
 

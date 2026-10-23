@@ -9,14 +9,19 @@ state. The neutral shell (model, persona/context helpers) lives in
 
 from semente import Calculator, Context as RunContext
 from semente.logging import log_debug
-from semente.agents.build_agent import context_blocks, persona_text
+from semente.agents.build_agent import context_blocks
 from semente.configs.prompts import get_agent_config
 
+from domain.schemas.candidate import PropertyCandidate
 from domain.schemas.feature import Feature
 from domain.tools.property_tools import (
     cancel_registration,
     complete_registration,
     confirm_registration,
+    find_property_by_registry_id,
+    find_property_candidates,
+    register_polygon,
+    select_candidate,
     start_buffer_registration_by_coordinate,
 )
 from domain.tools.biomass_tools import generate_biomass_map, generate_biomass_video, get_biomass_total
@@ -33,21 +38,94 @@ from domain.utils.feature_utils import get_registered_features, summarize_featur
 
 _agent_config = get_agent_config("single_agent")
 
+# The framework's UserPersona defaults are Portuguese ("Ainda não conhecido"): this prefix detects them as "unknown".
+_SEMENTE_UNKNOWN_PREFIX = "ainda n"
+
 
 def _candidate_features(session_state) -> list[Feature]:
     """Returns the pending candidates stored in the session as Feature models."""
     return [Feature.model_validate(prop) for prop in session_state.get("candidate_properties") or []]
 
 
+def _persona_text(session_state) -> str:
+    """Renders the user persona for the instructions, in English.
+
+    The framework's own rendering of the persona is in Portuguese, which made the agent answer in Portuguese. Here the
+    stored fields (``name``, ``role``, ``regionality``, ``communication_preferences``) are shown with the English labels of
+    ``persona_template``; unknown values (the framework's Portuguese defaults) become ``persona_unknown`` and the two role
+    literals are shown with their English meaning (``persona_roles``).
+
+    Args:
+        session_state (dict): The run's session state (``user_persona`` is a dict or a model).
+
+    Returns:
+        str: The persona text, or ``persona_fallback`` when the user has none yet.
+    """
+    persona = session_state.get("user_persona")
+    if persona is None:
+        return _agent_config["persona_fallback"].strip()
+    data = persona.model_dump() if hasattr(persona, "model_dump") else dict(persona)
+    unknown = _agent_config["persona_unknown"].strip()
+    roles = _agent_config["persona_roles"]
+
+    def value(key: str) -> str:
+        text = str(data.get(key) or "").strip()
+        return unknown if not text or text.casefold().startswith(_SEMENTE_UNKNOWN_PREFIX) else text
+
+    role = value("role")
+    preferences = "".join(
+        "\n" + _agent_config["persona_preference_line"].strip().format(key=str(item.get("key", "")).replace("_", " "), description=item.get("description", ""))
+        for item in data.get("communication_preferences") or []
+    )
+    return _agent_config["persona_template"].strip().format(
+        name=value("name"), role=roles.get(role, role), region=value("regionality"), preferences=preferences,
+    )
+
+
+def _candidates_text(session_state) -> str:
+    """Builds the numbered list of candidate polygons of the ``choosing`` state.
+
+    One line per candidate, ``"{n}. {origin label} · {name} · {area} ha · {distance}"``, using the display
+    labels of ``feature_type_names``; no internal ids or type keys.
+
+    Args:
+        session_state (dict): The run's session state (``candidate_properties`` holds serialized candidates).
+
+    Returns:
+        str: The list, or ``final_candidate_fallback`` when there is none.
+    """
+    labels = _agent_config["feature_type_names"]
+    lines = []
+    for index, item in enumerate(session_state.get("candidate_properties") or [], start=1):
+        candidate = PropertyCandidate.model_validate(item)
+        parts = [str(labels.get(candidate.type_key, _agent_config["feature_type_fallback"])).strip()]
+        if candidate.name:
+            parts.append(candidate.name)
+        parts.append(f"{candidate.area_ha:g} ha")
+        if candidate.distance_m is not None:
+            parts.append(
+                _agent_config["candidate_inside"].strip() if candidate.distance_m == 0
+                else _agent_config["candidate_away"].strip().format(distance=f"{candidate.distance_m:g}")
+            )
+        lines.append(f"{index}. " + " · ".join(parts))
+    return "\n".join(lines) or _agent_config["final_candidate_fallback"].strip()
+
+
 def get_tools(run_context: RunContext) -> list:
     """Selects the tools available to the agent for the current registration state.
 
+    - ``"choosing"``: the user must pick one of the numbered candidate polygons
+      (``select_candidate``, ``cancel_registration``).
     - ``"pending"``: the user must confirm or reject the candidate area
       (``confirm_registration``, ``cancel_registration``).
     - ``"final"``: the user must name the confirmed area
       (``complete_registration``, ``cancel_registration``).
+    In these three states the four registration starters (``find_property_candidates``,
+    ``find_property_by_registry_id``, ``register_polygon`` and
+    ``start_buffer_registration_by_coordinate``) are also available: calling one replaces the
+    pending registration silently, so a user who brings another area is served in the same reply.
     - otherwise (default): a new area can be registered and registered areas analyzed
-      (``start_buffer_registration_by_coordinate``, ``generate_pasture_map``,
+      (``find_property_candidates``, ``find_property_by_registry_id``, ``register_polygon``, ``start_buffer_registration_by_coordinate``, ``generate_pasture_map``,
       ``get_pasture_area``, ``generate_biomass_map``, ``get_biomass_total``, ``generate_biomass_video``,
       the five weather tools, ``generate_area_bulletin`` and the ``Calculator`` toolkit).
 
@@ -60,12 +138,20 @@ def get_tools(run_context: RunContext) -> list:
     session_state = run_context.session_state or {}
     registration_state = session_state.get("registration_state")
 
-    if registration_state == "pending":
-        return [confirm_registration, cancel_registration]
-    if registration_state == "final":
-        return [complete_registration, cancel_registration]
-    return [
+    starters = [
+        find_property_candidates,
+        find_property_by_registry_id,
+        register_polygon,
         start_buffer_registration_by_coordinate,
+    ]
+    if registration_state == "choosing":
+        return [select_candidate, cancel_registration, *starters]
+    if registration_state == "pending":
+        return [confirm_registration, cancel_registration, *starters]
+    if registration_state == "final":
+        return [complete_registration, cancel_registration, *starters]
+    return [
+        *starters,
         generate_pasture_map,
         get_pasture_area,
         generate_biomass_map,
@@ -144,7 +230,11 @@ def get_instructions(run_context: RunContext) -> str:
     registration_state = session_state.get("registration_state")
     ctx_blocks = context_blocks(session_state)
 
-    if registration_state == "pending":
+    if registration_state == "choosing":
+        state_text = _agent_config["instructions_choosing"].strip().format(candidates_text=_candidates_text(session_state))
+        instructions = f"{ctx_blocks}\n\n{state_text}".strip()
+
+    elif registration_state == "pending":
         candidates = _candidate_features(session_state)
         candidate_text = summarize_feature(candidates[0]) if candidates else _agent_config["final_candidate_fallback"].strip()
         state_text = _agent_config["instructions_pending_single"].strip().format(
@@ -161,7 +251,7 @@ def get_instructions(run_context: RunContext) -> str:
         instructions = f"{ctx_blocks}\n\n{state_text}".strip()
 
     else:
-        persona = persona_text(session_state)
+        persona = _persona_text(session_state)
         registrations_text = _registrations_text(session_state)
         instructions = "\n\n".join(
             part for part in (

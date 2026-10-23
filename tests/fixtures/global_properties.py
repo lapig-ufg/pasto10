@@ -1,7 +1,7 @@
 """Fixed set of 15 test properties around the world.
 
 Shared by the end-to-end tests and the benchmarks of the pasture tools (and,
-later, the biomass tools). Each entry of ``global_properties.json`` has an
+later, the biomass tools). Each entry of ``domain/data/test_properties.json`` (also used by the Streamlit test-property picker) has an
 ``id``, ``name``, ``country``, ``continent``, a center (``latitude``,
 ``longitude``), a buffer ``radius_m``, the expected IANA ``timezone``, a ``profile`` (what the place
 represents), a ``kind`` and the ``expect`` ranges that the e2e profile test
@@ -17,7 +17,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-_FILE = Path(__file__).with_name("global_properties.json")
+_FILE = Path(__file__).resolve().parents[2] / "domain" / "data" / "test_properties.json"
 
 
 @dataclass(frozen=True)

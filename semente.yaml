@@ -3,6 +3,8 @@ language: en
 domain_module: domain
 engine: agno
 prompts_dir: domain/prompts
+# Sources of candidate property polygons, in priority order (see README, "Adapting Pasto10 to your country").
+property_sources: [demo_registry, osm]
 channels: [streamlit]
 features:
   tts: true

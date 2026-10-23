@@ -93,14 +93,17 @@ def fetch_overlay(
 
 def draw_colorbar(
     image: Image.Image, stats: BiomassStats, bottom: int, value_range: Optional[Tuple[float, float]] = None,
+    corner: str = "bottom-left",
 ) -> Image.Image:
-    """Draws the colorbar (t DM/ha) on the bottom-left corner, ending above ``bottom``.
+    """Draws the colorbar (t DM/ha) on the bottom-left corner (ending above ``bottom``) or the top-right corner.
 
     Args:
         image (PIL.Image.Image): Image to draw on (a copy is returned).
         stats (BiomassStats): Gives the value range of the bar.
         bottom (int): Pixel row the colorbar must stay above.
         value_range (Tuple[float, float], optional): Fixed (low, high) range; defaults to the stats.
+        corner (str): ``"bottom-left"`` (static map) or ``"top-right"`` (video frames, whose bottom corners hold the
+            scale bar and the attributions; ``bottom`` is then ignored).
 
     Returns:
         PIL.Image.Image: New image with the colorbar.
@@ -112,7 +115,10 @@ def draw_colorbar(
     title, low_text, high_text = "Dry matter (t DM/ha)", f"{low:.1f}", f"{high:.1f}"
     box_width = max(width + 2 * padding, int(font.getlength(title)) + 2 * padding)
     box_height = height + 2 * padding + 2 * font.size + 4
-    left, top = max(10, int(image.size[0] * 0.03)), bottom - box_height
+    if corner == "top-right":
+        left, top = image.size[0] - box_width - 10, 10
+    else:
+        left, top = max(10, int(image.size[0] * 0.03)), bottom - box_height
 
     base = image.convert("RGBA")
     layer = Image.new("RGBA", base.size, (0, 0, 0, 0))

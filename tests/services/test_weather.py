@@ -228,3 +228,17 @@ def test_fallback_model_is_tried_only_after_a_400(api):
         weather.get_daily_quartiles(-2.0, 37.0)
 
     assert [p["models"] for u, p in api["calls"] if u == weather.ENSEMBLE_URL] == ["ncep_gefs_seamless"]
+
+
+@pytest.mark.parametrize(
+    "timestamp, month",
+    [("2026-10-01", "2026-10"), ("2026-09-30", "2026-10"), ("2026-10-31", "2026-11"), ("2026-12-31", "2027-01"), ("2026-01-01", "2026-01")],
+)
+def test_monthly_labels_are_right_in_zones_west_and_east_of_utc(timestamp, month):
+    assert weather.month_of(timestamp) == month
+
+
+def test_monthly_series_west_of_utc_starts_in_the_current_month():
+    payload = {"monthly": {"time": ["2026-09-30", "2026-10-31", "2026-11-30"], "precipitation_mean": [125.0, 138.8, 229.1]}}
+
+    assert [row.month for row in weather.monthly_precipitation(payload)] == ["2026-10", "2026-11", "2026-12"]

@@ -50,7 +50,6 @@ from domain.services.geospatial.image import (
     draw_scale_bar,
     parse_center,
     project_ring,
-    scale_bar_box,
 )
 from domain.services.geospatial.pasture_image import blend_overlay, draw_outline, mercator_bounds
 from domain.utils.cache_utils import SingleFlightCache
@@ -227,7 +226,6 @@ def render_frames(
     bounds = mercator_bounds(latlon_to_pixel(latitude, longitude, zoom), zoom, size)
     ring = project_ring(feature.get_coords()[0][0], (latitude, longitude), zoom, size)
     mpp = meters_per_pixel(latitude, zoom)
-    bar_bottom = scale_bar_box(size, mpp)[1] - 8
     lines = [_ATTRIBUTION[mode]] + ([provider.attribution] if provider is not None else [])
 
     def overlay(plan: FramePlan) -> Image.Image:
@@ -244,7 +242,7 @@ def render_frames(
         image = draw_outline(image, ring)
         image = draw_center_marker(image, (size[0] / 2, size[1] / 2))
         image = draw_scale_bar(image, mpp)
-        image = draw_colorbar(image, plan.stats, bar_bottom, (vmin, vmax))
+        image = draw_colorbar(image, plan.stats, 0, (vmin, vmax), corner="top-right")
         image = draw_corner_label(image, f"{plan.label} · Dry matter {plan.stats.mean_t_ha:g} t/ha")
         frames.append(draw_attribution(image, "\n".join(lines)))
     return frames

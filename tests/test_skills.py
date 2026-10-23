@@ -34,8 +34,9 @@ def test_skill_text_has_the_formulas_and_the_period_rule():
 
     for expected in (
         "450 kg", "total live weight (kg) / 450", "total AU / pasture area (ha)", "2.5%", "365 days",
-        "8.2 t DM/AU/year", "annual forage (t DM/year) / 8.2", "365 / days covered", "NEVER multiply a month by 12",
-        "get_biomass_total", "one binary operation per call", "order of magnitude",
+        "8.2 t DM/AU/year", "annual dry-matter production (t DM/year) / 8.2", "365 / days covered", "NEVER multiply a month by 12",
+        "get_biomass_total", "one binary operation per call", "order of magnitude", "upper-bound scenario",
+        "NOT the real carrying capacity", "Utilization factor 50%", "plain text",
     ):
         assert expected in text, expected
 
@@ -60,3 +61,10 @@ def test_calculator_excludes_the_unneeded_functions():
 
     assert "is_prime" not in calculator.functions and "factorial" not in calculator.functions
     assert {"add", "subtract", "multiply", "divide"} <= set(calculator.functions)
+
+
+def test_skill_avoids_latex_and_never_sells_the_scenario_as_the_real_carrying_capacity():
+    text = _skill().instructions
+
+    assert "$" not in text and "\\frac" not in text and "\\[" not in text
+    assert "Do NOT use LaTeX" in text and 'never "the carrying capacity of the area"' in text

@@ -190,3 +190,27 @@ def test_years_written_in_the_yaml_follow_the_service_constants():
     from semente.configs.prompts import get_agent_config
 
     assert f"year, {last}, is used" in get_agent_config("single_agent")["instructions_default"]
+
+
+def test_circle_areas_and_raster_differences_are_noted_in_the_biomass_text(monkeypatch, fake_service):
+    from domain.utils.feature_utils import get_registered_features
+
+    run_context = _context("Test area")
+    feature = get_registered_features(run_context.session_state).features[0]
+    fake_service[1]["value"] = ANNUAL.model_copy(update={"area_ha": round(feature.total_area + 2.0, 2), "pasture_ha": 205.44})
+
+    result = biomass_tools.get_biomass_total(run_context=run_context)
+
+    assert "approximate circle, not a real property boundary" in result.content and "difference comes from the raster resolution" in result.content
+    assert "205.4 ha" in result.content
+
+
+@pytest.mark.parametrize("tool_name", BOTH)
+def test_biomass_results_announce_the_latest_area_and_always_name_the_area_and_period(fake_service, tool_name):
+    run_context = _context("North", "South")
+
+    unnamed = getattr(biomass_tools, tool_name)(run_context=run_context)
+    named = getattr(biomass_tools, tool_name)(run_context=run_context, area_name="north")
+
+    assert "Using South, the user's most recently registered area" in unnamed.content and '"South"' in unnamed.content and "2025" in unnamed.content
+    assert "most recently registered" not in named.content and '"North"' in named.content

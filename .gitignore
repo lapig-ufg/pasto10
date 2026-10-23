@@ -222,3 +222,5 @@ __marimo__/
 # Run Folders
 tmp/
 logs/
+users_db.json
+

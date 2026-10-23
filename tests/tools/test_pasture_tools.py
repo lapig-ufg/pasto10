@@ -148,3 +148,40 @@ def test_tool_descriptions_state_the_2022_default():
     for name in ("get_pasture_area", "generate_pasture_map"):
         description = get_tool_description("pasture_tools", name)
         assert "default year is 2022" in description and "experimental" in description
+
+
+def test_circle_areas_and_raster_differences_are_noted_in_the_text(monkeypatch, fake_service):
+    from domain.utils.feature_utils import get_registered_features
+
+    run_context = _context("Test area")
+    feature = get_registered_features(run_context.session_state).features[0]
+    different = STATS.model_copy(update={"area_ha": round(feature.total_area + 1.0, 2)})
+    monkeypatch.setattr(pasture_tools, "measure_area", lambda f, year: different)
+
+    result = pasture_tools.get_pasture_area(run_context=run_context)
+
+    assert "approximate circle, not a real property boundary" in result.content
+    assert "difference comes from the raster resolution" in result.content and f"{feature.total_area:.1f} ha" in result.content
+
+
+def test_matching_areas_have_no_difference_note_and_hectares_have_one_decimal(monkeypatch, fake_service):
+    from domain.utils.feature_utils import get_registered_features
+
+    run_context = _context("Test area")
+    feature = get_registered_features(run_context.session_state).features[0]
+    same = STATS.model_copy(update={"area_ha": feature.total_area, "pasture_ha": 18.44, "cultivated_ha": 12.06, "natural_ha": 6.38})
+    monkeypatch.setattr(pasture_tools, "measure_area", lambda f, year: same)
+
+    result = pasture_tools.get_pasture_area(run_context=run_context)
+
+    assert "raster resolution" not in result.content and "18.4 ha" in result.content and "12.1 ha" in result.content
+
+
+def test_pasture_results_announce_the_latest_area_only_when_it_was_picked_by_default(fake_service):
+    run_context = _context("North", "South")
+
+    unnamed = pasture_tools.get_pasture_area(run_context=run_context)
+    named = pasture_tools.get_pasture_area(run_context=run_context, area_name="north")
+
+    assert "Using South, the user's most recently registered area (2 areas are registered)" in unnamed.content and 'for 2020' in unnamed.content or "2020" in unnamed.content
+    assert "most recently registered" not in named.content and 'Pasture analysis of "North"' in named.content

@@ -144,14 +144,14 @@ def test_plan_frames_propagates_a_missing_pasture(monkeypatch, series_ee):
 def test_every_frame_uses_the_same_scale_and_its_own_label(monkeypatch):
     ranges, bars, labels = [], [], []
     monkeypatch.setattr(biomass_video, "fetch_overlay", lambda image, stats, bounds, size, value_range: ranges.append(value_range) or Image.new("RGBA", size, (0, 0, 0, 0)))
-    monkeypatch.setattr(biomass_video, "draw_colorbar", lambda image, stats, bottom, value_range: bars.append(value_range) or image)
+    monkeypatch.setattr(biomass_video, "draw_colorbar", lambda image, stats, bottom, value_range, corner="bottom-left": bars.append((value_range, corner)) or image)
     monkeypatch.setattr(biomass_video, "draw_corner_label", lambda image, text: labels.append(text) or image)
     plans = [biomass_video.FramePlan(label, _stats(mean=mean), FakeImage()) for label, mean in (("2026-07", 1.5), ("2026-08*", 2.5))]
 
     frames = biomass_video.render_frames(_feature(), plans, 0.4, 3.5, "monthly")
 
     assert len(frames) == 2 and all(frame.size == (640, 640) for frame in frames)
-    assert ranges == [(0.4, 3.5)] * 2 and bars == [(0.4, 3.5)] * 2
+    assert ranges == [(0.4, 3.5)] * 2 and bars == [((0.4, 3.5), "top-right")] * 2
     assert labels[0].startswith("2026-07 ") and labels[1].startswith("2026-08* ") and "1.5 t/ha" in labels[0]
 
 

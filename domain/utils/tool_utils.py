@@ -71,3 +71,62 @@ def area_label(feature: Feature) -> str:
         str: The name to show the user, never empty.
     """
     return feature.name or get_agent_config("single_agent")["feature_type_fallback"].strip()
+
+
+AREA_DIFFERENCE_TOLERANCE_HA = 0.05
+
+
+def area_notes(component: str, tool_key: str, feature: Feature, analyzed_ha: float) -> list[str]:
+    """Builds the notes about the registered area that accompany a pasture or biomass result.
+
+    ``note_approximate_area`` when the area is an approximate circle (``buffer_area``), and ``note_area_difference``
+    when the area analyzed on the raster differs from the registered area by more than ``AREA_DIFFERENCE_TOLERANCE_HA``
+    (raster resolution); hectares are shown with one decimal.
+
+    Args:
+        component (str): Tool group in ``tools.yml``.
+        tool_key (str): Tool whose ``results`` texts are rendered.
+        feature (Feature): The registered area.
+        analyzed_ha (float): Total area covered by the analysis, in hectares.
+
+    Returns:
+        list[str]: Zero, one or two note texts.
+
+    Raises:
+        MissingPromptError: If the tool lacks those result texts.
+    """
+    notes = []
+    if feature.feature_type == "buffer_area":
+        notes.append(get_tool_result_text(component, tool_key, "note_approximate_area"))
+    if abs(feature.total_area - analyzed_ha) > AREA_DIFFERENCE_TOLERANCE_HA:
+        notes.append(get_tool_result_text(
+            component, tool_key, "note_area_difference", registered_ha=f"{feature.total_area:.1f}", analyzed_ha=f"{analyzed_ha:.1f}",
+        ))
+    return notes
+
+
+def latest_area_note(run_context: RunContext, area_name: Optional[str], feature: Feature) -> str:
+    """Returns the note telling which area was used when the user did not name one and several are registered.
+
+    The text is ``note_latest_area`` of ``agents.yml`` (``{name}`` and ``{count}`` filled in), so the assistant says which
+    area it used instead of silently picking one.
+
+    Args:
+        run_context (RunContext): The run context holding ``session_state`` (read only).
+        area_name (str, optional): The name the user gave, if any.
+        feature (Feature): The area that was resolved (the most recently registered one when no name was given).
+
+    Returns:
+        str: The note, or an empty string when a name was given or only one area is registered.
+    """
+    if area_name and area_name.strip():
+        return ""
+    count = len(get_registered_features(run_context.session_state or {}).features)
+    if count < 2:
+        return ""
+    return get_agent_config("single_agent")["note_latest_area"].strip().format(name=area_label(feature), count=count)
+
+
+def with_note(text: str, note: str) -> str:
+    """Appends a note on its own line (the text unchanged when the note is empty)."""
+    return f"{text}\n{note}" if note else text

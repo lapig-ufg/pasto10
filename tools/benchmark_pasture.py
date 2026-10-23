@@ -44,7 +44,7 @@ RADIUS_METERS = 2000
 EVAL_YEARS = (2023, 2024)
 MIN_TRUTH_FRACTION = 0.02
 
-FIXTURE_FILE = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "global_properties.json"
+FIXTURE_FILE = Path(__file__).resolve().parents[1] / "domain" / "data" / "test_properties.json"
 FIXTURE_SITES = {
     entry["id"]: (entry["latitude"], entry["longitude"]) for entry in json.loads(FIXTURE_FILE.read_text(encoding="utf-8"))
 }

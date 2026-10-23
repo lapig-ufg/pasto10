@@ -1,7 +1,7 @@
 services:
   streamlit_app:
     build: .
-    command: uv run semente streamlit
+    command: uv run streamlit run app/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
     volumes:
       - .:/app
       - /app/.venv
@@ -10,6 +10,7 @@ services:
       - "8501:8501"
     environment:
       - PYTHONPATH=/app
+      - APP_ENV=development
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
     extra_hosts:

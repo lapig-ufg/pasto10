@@ -19,7 +19,7 @@ from semente.configs.prompts import get_tool_description, get_tool_result_text
 from domain.services.geospatial import season_forecast, weather
 from domain.services.geospatial.image import parse_center
 from domain.services.geospatial.weather import WeatherServiceUnavailable
-from domain.utils.tool_utils import area_label, lookup_area, unexpected_error
+from domain.utils.tool_utils import area_label, latest_area_note, lookup_area, unexpected_error, with_note
 
 _COMPONENT = "weather_tools"
 
@@ -48,7 +48,8 @@ def _run(
         if failure is not None:
             return failure
         latitude, longitude = parse_center(feature)
-        return render(area_label(feature), latitude, longitude)
+        result = render(area_label(feature), latitude, longitude)
+        return ToolResult(content=with_note(result.content, latest_area_note(run_context, area_name, feature)), images=result.images)
     except WeatherServiceUnavailable as error:
         log_warning(f"{tool_key}: {error}")
         return ToolResult(content=get_tool_result_text(_COMPONENT, tool_key, "service_unavailable"))
@@ -218,6 +219,6 @@ def get_temperature_forecast(run_context: RunContext, area_name: Optional[str] =
     def render(label, latitude, longitude):
         rows, timezone = weather.get_temperature_forecast(latitude, longitude, forecast_days)
         lines = "\n".join(_text(tool_key, "line", day=row.day.isoformat(), tmin=row.tmin, tmax=row.tmax) for row in rows)
-        return ToolResult(content=_text(tool_key, "success", area_name=label, timezone=timezone, count=len(rows), lines=lines))
+        return ToolResult(content=_text(tool_key, "success", area_name=label, timezone=timezone, count=len(rows), lines=lines, first_day=rows[0].day.isoformat() if rows else ""))
 
     return _run(run_context, area_name, tool_key, render)

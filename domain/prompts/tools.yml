@@ -150,9 +150,148 @@ property_tools:
       invalid_coordinates: |
         The coordinate ({latitude}, {longitude}) is not valid. Apologize to the user and explain that the latitude must be between -{max_latitude} and {max_latitude} degrees and the longitude between -180 and 180 degrees (decimal degrees), then ask for the coordinate again.
       confirm_buffer_area: |
-        The area image was sent to the user. Ask the user whether the following area is the correct one:
+        The area image was sent to the user. This is an approximate circle around the coordinate, NOT a real property boundary: do not call it "property" or "farm". Ask the user whether the following area is the one they want to monitor:
         > {area_details}
         Mention that the radius is {radius} m and that they can choose another radius between {min_radius} and {max_radius} m (default: {default_radius} m).
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  find_property_candidates:
+    description: |
+      Looks for candidate property polygons around a coordinate and shows them numbered on an image, so the user can
+      say which one is their area.
+
+      Use this tool when the user gives a coordinate (latitude/longitude) of a place they want to monitor. The
+      polygons come from the enabled property sources, queried together: a registry (here a synthetic DEMO registry
+      that illustrates a country's property registry; its parcels have a registry number, area and status) and
+      OpenStreetMap land-use polygons (slower, may not answer in time). A land-use polygon does NOT prove the place is a farm; ask whether the polygon is the user's area.
+      If nothing is found, offer an approximate circle or a polygon of their own.
+
+      Coordinates must be in decimal degrees (convert degrees, minutes and seconds first: decimal = |D| + M/60 + S/3600,
+      negative for S/W).
+
+      Args:
+          latitude (float): Latitude of the point in decimal degrees (between -85 and 85).
+          longitude (float): Longitude of the point in decimal degrees (between -180 and 180).
+          source (str, optional): Key of the property source. Leave empty to use the default.
+
+      Returns:
+          ToolResult: Numbered candidate polygons and an image with the same numbers.
+    results:
+      candidates_list: |
+        {count} candidate polygon(s) were found around ({latitude}, {longitude}) and are shown numbered in the image:
+        {candidates}
+        {notes}
+        Ask the user which number is their area, or say that none is. Describe each polygon with the label given (never as "property" or "farm" unless it says registered property boundary) and ask whether the polygon is their area.
+      candidate_line: "{index}. {origin_label}{name} · {area} ha{status}{distance}"
+      distance_inside: " · contains the point"
+      distance_away: " · {distance} m away"
+      warning_may_not_be_a_farm: |
+        Land-use polygons only say how the land is used: a polygon does not prove it is a farm.
+      warning_does_not_contain_point: |
+        Some polygons do not contain the given point.
+      warning_approximate_area: |
+        An approximate circle is not a real property boundary.
+      warning_synthetic_demo: |
+        DEMO registry: the parcels marked DEMO are synthetic sample parcels invented for illustration, not real property boundaries. Say clearly that this is a demonstration of how a country's property registry plugs in.
+      status_text: " · status {status}"
+      source_label_osm: "OpenStreetMap lookup"
+      source_label_demo_registry: "demo registry"
+      source_label_registry: "property registry"
+      note_source_timeout: |
+        The {source} did not answer in time, so only the other sources are shown (for example the demo registry only). Tell the user briefly, and that they can ask again later.
+      note_source_unavailable: |
+        The {source} is temporarily unavailable, so only the other sources are shown. Tell the user briefly.
+      no_candidates: |
+        No polygon was found around ({latitude}, {longitude}) in the property source. Tell the user that coverage varies by region and that no boundary is available for this point. Offer the user two options: an approximate circle around the point (radius from {min_radius} to {max_radius} m, default {default_radius} m; it is NOT a real property boundary) or, if they have the boundary of their area as GeoJSON, a polygon of their own.
+      source_unavailable: |
+        No parcel was found in the registry and the OpenStreetMap lookup did not answer (or the polygon service is unavailable). Apologize briefly. Offer the user two options: an approximate circle around the point (radius from {min_radius} to {max_radius} m, default {default_radius} m; it is NOT a real property boundary) or, if they have the boundary of their area as GeoJSON, a polygon of their own.
+      urban_area: |
+        The point lies in an urban area (residential, commercial or industrial land use), so no farm polygon is offered. Offer the user two options: an approximate circle around the point (radius from {min_radius} to {max_radius} m, default {default_radius} m; it is NOT a real property boundary) or, if they have the boundary of their area as GeoJSON, a polygon of their own.
+      unknown_source: |
+        The property source "{source}" is not available. Apologize and offer the user two options: an approximate circle around the point (radius from {min_radius} to {max_radius} m, default {default_radius} m; it is NOT a real property boundary) or, if they have the boundary of their area as GeoJSON, a polygon of their own.
+      invalid_coordinates: |
+        The coordinate ({latitude}, {longitude}) is not valid. Apologize to the user and explain that the latitude must be between -{max_latitude} and {max_latitude} degrees and the longitude between -180 and 180 degrees (decimal degrees), then ask for the coordinate again.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  find_property_by_registry_id:
+    description: |
+      Finds a property by its registry number and shows its polygon for confirmation, like looking up a rural
+      registry number.
+
+      Use this tool when the user gives a registry number (for example "DEMO-BRA-0001"). The registry may be a
+      synthetic DEMO registry created to illustrate how a country's property registry plugs in.
+
+      Args:
+          identifier (str): The registry number as the user wrote it.
+          source (str, optional): Key of the property source. Leave empty to try all enabled sources.
+
+      Returns:
+          ToolResult: An image of the polygon and instructions to ask for confirmation.
+    results:
+      confirm_candidate: |
+        The registry number matches this area ({origin_label}):
+        > {area_details}
+        {notes}
+        The polygon image is attached: show it to the user first, then ask whether this polygon is their area. If it is a DEMO parcel, say that it is a synthetic sample, not a real property boundary. When the user confirms, call `confirm_registration` and then ask for a name for the area; once it is registered do not ask again whether this is their area.
+      not_found: |
+        No area with the registry number "{identifier}" was found. Tell the user and ask them to check the number, or to give a coordinate so you can search for candidate polygons, or a polygon of their own (GeoJSON).
+      source_unavailable: |
+        The registry is temporarily unavailable, so the number could not be checked. Apologize briefly and offer a coordinate search, an approximate circle or a polygon of their own (GeoJSON).
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  select_candidate:
+    description: |
+      Selects one of the numbered candidate polygons shown after `find_property_candidates`.
+
+      Use this tool when the user says which number is their area (e.g. "the second one", "number 3").
+
+      Args:
+          selection (int): The number of the chosen polygon (1 for the first).
+
+      Returns:
+          ToolResult: An image of the polygon and instructions to ask for confirmation.
+    results:
+      confirm_candidate: |
+        The user chose this area ({origin_label}):
+        > {area_details}
+        {notes}
+        The polygon image is attached: show it to the user first, then ask whether this polygon is their area, using the label given (do not call it "property" or "farm" unless it says registered property boundary). When the user confirms, call `confirm_registration` and then ask for a name for the area; once it is registered do not ask again whether this is their area.
+      invalid_selection: |
+        That number is not valid: there are {count} candidate polygon(s). Ask the user to choose a number from 1 to {count}, or to say that none is their area.
+      no_candidates_pending: |
+        There are no candidate polygons to choose from. Ask the user for the coordinate of the area they want to register first.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  register_polygon:
+    description: |
+      Starts the registration of an area from a polygon provided by the user, as GeoJSON (a Feature, a
+      FeatureCollection or a geometry in longitude/latitude).
+
+      Use this tool when the user attaches a GeoJSON file or pastes GeoJSON text with the boundary of their area.
+      When a file is attached, call the tool without arguments: the file is read by the system and you must not copy
+      coordinates yourself. Other formats (KML, shapefile) are not supported yet: ask for GeoJSON.
+
+      When the user's message contains the note "[GeoJSON file attached: <name>, <N> vertices]", the file was uploaded: call this tool with `geojson` EMPTY (the system reads the attached file; never copy coordinates). When the user pastes the GeoJSON text in the message, pass that text in `geojson`. Pass the GeoJSON text of the user's CURRENT message in `geojson` (it may follow the words "GeoJSON provided by the user:"); never reuse a polygon from an earlier message. If the current message has no GeoJSON and no file is attached, call it without arguments so the user is asked for one.
+
+      Args:
+          geojson (str, optional): GeoJSON text pasted by the user. Leave empty when a file is attached.
+
+      Returns:
+          ToolResult: An image of the polygon and instructions to ask for confirmation.
+    results:
+      confirm_candidate: |
+        The user provided this polygon ({origin_label}):
+        > {area_details}
+        {notes}
+        The polygon image is attached: show it to the user first, then ask whether this polygon is their area. When the user confirms, call `confirm_registration` and then ask for a name for the area; once it is registered do not ask again whether this is their area.
+      missing_polygon: |
+        No GeoJSON was received. Ask the user to attach a GeoJSON file or paste the GeoJSON of their area.
+      invalid_polygon: |
+        The polygon could not be read: it must be valid GeoJSON with a Polygon or MultiPolygon in longitude/latitude degrees. Apologize and ask for a corrected GeoJSON with a simple polygon, without self-intersecting edges (KML and shapefiles are not supported yet).
+      polygon_too_large: |
+        The polygon is larger than the maximum of {max_ha} ha. Ask for a smaller area.
+      polygon_too_complex: |
+        The polygon is too large or too complex to be read safely (limits: 1 MB, 2,000 vertices, 20 features, 50 rings, and an invalid polygon with self-intersecting edges can only be small). Apologize and ask the user for a simple polygon of their area (a single polygon without self-intersecting edges, simplified to a few hundred vertices) as GeoJSON.
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
   confirm_registration:
@@ -193,7 +332,7 @@ property_tools:
         Name: {name}
         Details: {area_details}
 
-        Tell the user, in one short message, that the area was registered with this name.
+        Tell the user, in one short message, that the area was registered with this name. Do not ask again whether this is the area; offer instead what they can do next (pasture map and area, dry-matter production, weather).
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
   cancel_registration:
@@ -205,7 +344,7 @@ property_tools:
       the registration.
     results:
       cancelled: |
-        The registration was cancelled and nothing was saved. If the user asked for a different radius or location, repeat the new value back and ask them to confirm so the new area can be generated; otherwise, let them know briefly that they can send a new coordinate (and radius) whenever they want to register an area.
+        The pending registration was cleared and nothing was saved. Mention it at most once, in a short sentence, and only if the user did not already know; then continue with what the user asked next (for example, if they gave a new coordinate, search for areas around it in your next step, or ask them to resend it).
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
 
@@ -236,6 +375,10 @@ pasture_tools:
         The map image was sent to the user. Describe it briefly: state the year and the data source,
         and give the pasture area in hectares. Remember that this is satellite-derived and does not replace field verification.
         If the source is the Pasto10 classification, this is an experimental estimate, not an official map (it may also report small amounts of pasture where there is none, in arid or urban areas) and not a measurement: state that clearly, present the figures only as an order of magnitude, say that it can diverge a lot from one year to the next and from the official map (in a validation against official maps, about 90% of the pixels agreed on average, but some areas deviated by several times the official pasture area), do not compare it with earlier years as a trend, and recommend 2022 (the latest Global Pasture Watch year) as the reliable reference.
+      note_approximate_area: |
+        The analyzed area is an approximate circle, not a real property boundary: say so once, briefly.
+      note_area_difference: |
+        The registered area is {registered_ha} ha and the analyzed area is {analyzed_ha} ha: the difference comes from the raster resolution of the satellite data (explain it in one short sentence).
       no_registered_area: |
         The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
       area_not_found: |
@@ -271,6 +414,10 @@ pasture_tools:
         Report the figures to the user in plain language, always stating the year and the data source.
         Remember that this is satellite-derived and does not replace field verification.
         If the source is the Pasto10 classification, this is an experimental estimate, not an official map (it may also report small amounts of pasture where there is none, in arid or urban areas) and not a measurement: state that clearly, present the figures only as an order of magnitude, say that it can diverge a lot from one year to the next and from the official map (in a validation against official maps, about 90% of the pixels agreed on average, but some areas deviated by several times the official pasture area), do not compare it with earlier years as a trend, and recommend 2022 (the latest Global Pasture Watch year) as the reliable reference.
+      note_approximate_area: |
+        The analyzed area is an approximate circle, not a real property boundary: say so once, briefly.
+      note_area_difference: |
+        The registered area is {registered_ha} ha and the analyzed area is {analyzed_ha} ha: the difference comes from the raster resolution of the satellite data (explain it in one short sentence).
       no_registered_area: |
         The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
       area_not_found: |
@@ -314,6 +461,10 @@ biomass_tools:
         This period comes from Time2Graze: it covers only {days} days ({start} to {end}) from {n_images} image(s), recent data with partial coverage, so say that the figures are short-period and indicative.
       note_partial_year: |
         The user asked for {year}, but the data cover only part of that year, from {start} to {end} ({days} days): make clear that the figures are NOT for the whole year, give these dates and days, and never present them as an annual value.
+      note_approximate_area: |
+        The analyzed area is an approximate circle, not a real property boundary: say so once, briefly.
+      note_area_difference: |
+        The registered area is {registered_ha} ha and the analyzed area is {analyzed_ha} ha: the difference comes from the raster resolution of the satellite data (explain it in one short sentence).
       no_registered_area: |
         The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
       area_not_found: |
@@ -359,6 +510,10 @@ biomass_tools:
         This period comes from Time2Graze: it covers only {days} days ({start} to {end}) from {n_images} image(s), recent data with partial coverage, so say that the figures are short-period and indicative.
       note_partial_year: |
         The user asked for {year}, but the data cover only part of that year, from {start} to {end} ({days} days): make clear that the figures are NOT for the whole year, give these dates and days, and never present them as an annual value.
+      note_approximate_area: |
+        The analyzed area is an approximate circle, not a real property boundary: say so once, briefly.
+      note_area_difference: |
+        The registered area is {registered_ha} ha and the analyzed area is {analyzed_ha} ha: the difference comes from the raster resolution of the satellite data (explain it in one short sentence).
       no_registered_area: |
         The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
       area_not_found: |
@@ -437,7 +592,7 @@ weather_tools:
           ToolResult: Monthly mean precipitation (mm) from the seasonal forecast.
     results:
       success: |
-        Monthly precipitation forecast for "{area_name}" (timezone {timezone}), {count} month(s), current month first:
+        Monthly precipitation forecast for "{area_name}": exactly {count} month(s) are available (the current month first) and the area's timezone is {timezone}. Say how many months there are (do not call it 7 months unless it is 7) and mention the timezone.
         {lines}
         Seasonal forecasts have low skill: present these as a rough tendency, not a prediction. Weather data by Open-Meteo.com (CC-BY 4.0).
       line: |
@@ -556,7 +711,7 @@ weather_tools:
           ToolResult: Daily minimum and maximum temperatures.
     results:
       success: |
-        Temperature forecast for "{area_name}" (timezone {timezone}), {count} day(s):
+        Temperature forecast for "{area_name}" in the area's timezone ({timezone}; mention it): {count} day(s), starting today ({first_day}, the local date). The first line is today, not a past day.
         {lines}
         Weather data by Open-Meteo.com (CC-BY 4.0).
       line: |

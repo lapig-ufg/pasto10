@@ -66,6 +66,32 @@ def _safe_summary(feature: Feature, config: dict) -> str:
     return f"{display_name} · {feature.total_area} ha"
 
 
+def _polygon_summary(feature: Feature, config: dict) -> str:
+    """Builds the summary of a polygon feature (registered boundary, land-use polygon or user polygon).
+
+    Uses the ``polygon_summary`` template with the origin label (``feature_type_names``), the optional source
+    name, the area and the center; falls back to the safe summary when the template or the center is unusable.
+
+    Args:
+        feature (Feature): A feature with ``origin`` and ``center`` metadata.
+        config (dict): The ``single_agent`` prompt config.
+
+    Returns:
+        str: E.g. ``"OpenStreetMap land-use polygon (may not be a farm) · Santa Rita · Area: 41.2 ha · Location: ..."``.
+    """
+    template = config.get("polygon_summary")
+    label = str((config.get("feature_type_names") or {}).get(feature.feature_type) or config.get("feature_type_fallback") or "area").strip()
+    try:
+        latitude, longitude = (part.strip() for part in str(feature.get_metadata("center")).split(","))
+        source_name = feature.get_metadata("source_name")
+        return str(template).strip().format(
+            origin_label=label, name=f" · {source_name}" if source_name else "", area=feature.total_area,
+            latitude=latitude, longitude=longitude,
+        )
+    except (KeyError, ValueError, IndexError):
+        return _safe_summary(feature, config)
+
+
 def summarize_feature(feature: Feature) -> str:
     """Builds the user-facing one-line summary of a buffer area.
 
@@ -89,6 +115,8 @@ def summarize_feature(feature: Feature) -> str:
     config = get_agent_config("single_agent") or {}
     center = feature.get_metadata("center")
     radius = feature.get_metadata("radius")
+    if feature.get_metadata("origin") not in (None, "approximate_circle") and center is not None:
+        return _polygon_summary(feature, config)
     template = config.get("candidate_summary")
     if center is None or radius is None or feature.total_area is None or not template:
         return _safe_summary(feature, config)

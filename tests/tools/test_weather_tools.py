@@ -189,3 +189,27 @@ def test_daily_description_matches_the_code_horizon():
     description = get_tool_description("weather_tools", "get_daily_precipitation_forecast")
 
     assert "1 = today" in description and "horizon_exceeded" in description and "33-34" in description
+
+
+def test_monthly_text_states_the_real_month_count_and_the_timezone(api):
+    result = weather_tools.get_monthly_precipitation_forecast(run_context=_context("A"), months=6)
+
+    assert "exactly 6 month(s)" in result.content and "Africa/Nairobi" in result.content and "do not call it 7 months" in result.content
+
+
+def test_temperature_text_says_the_first_day_is_today_in_the_area_timezone(api):
+    result = weather_tools.get_temperature_forecast(run_context=_context("A"), forecast_days=5)
+
+    first = [line for line in result.content.splitlines() if line.startswith("- ")][0]
+    assert f"starting today ({first[2:12]}, the local date)" in result.content and "Africa/Nairobi" in result.content
+
+
+def test_the_latest_area_is_announced_when_no_name_is_given_and_several_are_registered(api):
+    run_context = _context("North", "South")
+
+    unnamed = weather_tools.get_temperature_forecast(run_context=run_context)
+    named = weather_tools.get_temperature_forecast(run_context=run_context, area_name="north")
+    single = weather_tools.get_temperature_forecast(run_context=_context("Only"))
+
+    assert "Using South, the user's most recently registered area (2 areas are registered)" in unnamed.content
+    assert "most recently registered" not in named.content and "most recently registered" not in single.content

@@ -122,6 +122,25 @@ def local_today(utc_offset_seconds: int, now_utc: Optional[datetime] = None) -> 
     return (now + timedelta(seconds=utc_offset_seconds)).date()
 
 
+def month_of(timestamp: str) -> str:
+    """Returns the ``YYYY-MM`` month a seasonal-forecast timestamp stands for.
+
+    The API gives the start of each month as UTC midnight expressed as a date in the area's timezone, so in zones west
+    of UTC it falls on the last day of the PREVIOUS month (e.g. ``2026-09-30`` for October). Dates after the 15th
+    therefore mean the next month.
+
+    Args:
+        timestamp (str): ISO date of the monthly entry (``YYYY-MM-DD``).
+
+    Returns:
+        str: The month label.
+    """
+    day = date.fromisoformat(timestamp[:10])
+    if day.day > 15:
+        day = (day.replace(day=1) + timedelta(days=32)).replace(day=1)
+    return f"{day.year:04d}-{day.month:02d}"
+
+
 def monthly_precipitation(payload: dict, months: int = MAX_MONTHS) -> list[MonthlyPrecipitation]:
     """Extracts the monthly precipitation (current month first) from a seasonal response.
 
@@ -134,7 +153,7 @@ def monthly_precipitation(payload: dict, months: int = MAX_MONTHS) -> list[Month
     """
     monthly = payload["monthly"]
     rows = [
-        MonthlyPrecipitation(month=day[:7], mm=float(value))
+        MonthlyPrecipitation(month=month_of(day), mm=float(value))
         for day, value in zip(monthly["time"], monthly["precipitation_mean"])
         if value is not None
     ]

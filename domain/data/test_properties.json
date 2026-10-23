@@ -280,21 +280,21 @@
     "name": "Kenya",
     "country": "Kenya",
     "continent": "Africa",
-    "latitude": -2.0,
-    "longitude": 37.0,
+    "latitude": -2.6,
+    "longitude": 37.25,
     "radius_m": 1000,
     "timezone": "Africa/Nairobi",
-    "profile": "Savanna rangeland with shrubs and grasses",
+    "profile": "Semi-arid savanna grassland near Amboseli (short grasses, few shrubs)",
     "kind": "natural",
     "expect": {
       "gpw_2022_pasture_fraction": [
-        0.85,
+        0.9,
         1
       ],
       "dominant_class": "natural",
       "worldcover": {
-        "shrub": [
-          0.4,
+        "grass": [
+          0.8,
           1
         ]
       }

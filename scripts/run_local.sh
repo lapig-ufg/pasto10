@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Run the Pasto10 Streamlit chat locally (SQLite, no production services).
+# Starts app/streamlit_app.py (the Semente chat plus the test-property picker).
+# PORT overrides the default port 8501.
 #
 # Usage: scripts/run_local.sh [path/to/env/file]
 #
@@ -33,4 +35,6 @@ export APP_ENV=development
 export DATABASE_TYPE=sqlite
 export PYTHONPATH="$PWD"
 
-exec uv run semente streamlit "${@:2}"
+export SEMENTE_MANIFEST=semente.yaml
+
+exec uv run streamlit run app/streamlit_app.py --server.port "${PORT:-8501}" "${@:2}"

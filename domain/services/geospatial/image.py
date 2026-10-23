@@ -25,7 +25,7 @@ from domain.services.geospatial.basemap import (
     meters_per_pixel,
     resolve_providers,
 )
-from domain.services.geospatial.geometry import normalize_longitude
+from domain.services.geospatial.geometry import haversine_distance, normalize_longitude
 
 IMAGE_SIZE = (640, 640)
 NEUTRAL_BACKGROUND = (226, 226, 220)
@@ -327,6 +327,7 @@ def render_buffer_image(
     feature: Feature,
     size: Tuple[int, int] = IMAGE_SIZE,
     providers: Optional[Sequence[TileProvider]] = None,
+    origin_label: Optional[str] = None,
 ) -> RenderedImage:
     """Renders the confirmation image of a buffer area.
 
@@ -346,6 +347,8 @@ def render_buffer_image(
         size (Tuple[int, int]): Output (width, height) in pixels.
         providers (Sequence[TileProvider], optional): Tile providers to try,
             in order; defaults to ``resolve_providers()`` (read at call time).
+        origin_label (str, optional): Text added as a third label line (e.g. "approximate area, not a real
+            property boundary").
 
     Returns:
         RenderedImage: JPEG (quality 80) over a tile basemap, PNG over the
@@ -373,8 +376,195 @@ def render_buffer_image(
     image = draw_scale_bar(image, meters_per_pixel(latitude, zoom))
     image = draw_corner_label(
         image,
-        f"{latitude:.5f}, {longitude:.5f}\nRadius {radius:g} m · {feature.total_area:g} ha",
+        f"{latitude:.5f}, {longitude:.5f}\nRadius {radius:g} m · {feature.total_area:g} ha" + (f"\n{origin_label}" if origin_label else ""),
     )
     if provider is not None:
         image = draw_attribution(image, provider.attribution)
+    return encode(image, with_basemap=provider is not None)
+
+
+CANDIDATE_COLORS = ((255, 214, 0), (0, 200, 255), (255, 105, 180), (140, 255, 90), (255, 140, 0))
+_CANDIDATE_FILL_ALPHA = 55
+OSM_ATTRIBUTION = "© OpenStreetMap contributors"
+
+
+def _polygon_rings(candidate) -> list:
+    """Returns the outer rings (lon, lat lists) of a candidate geometry."""
+    from domain.services.property_sources import geometry_utils as geo
+
+    shape = geo.polygonal_part(geo.from_geojson_geometry(candidate.geometry))
+    polygons = shape.geoms if hasattr(shape, "geoms") else [shape]
+    return [list(polygon.exterior.coords) for polygon in polygons]
+
+
+def _basemap_for(latitude: float, longitude: float, radius: float, size: Tuple[int, int], providers):
+    """Builds the basemap fitting a circle of ``radius`` meters; returns (zoom, background, provider)."""
+    if providers is None:
+        providers = resolve_providers()
+    max_zoom = min((p.max_zoom for p in providers), default=ESRI_WORLD_IMAGERY.max_zoom)
+    zoom = choose_zoom(latitude, radius, size, max_zoom=max_zoom)
+    background, provider = build_basemap(latitude, longitude, zoom, size, providers=providers)
+    if background is None:
+        background = Image.new("RGB", size, NEUTRAL_BACKGROUND)
+    return zoom, background, provider
+
+
+def _draw_polygons(image: Image.Image, rings_by_color: Sequence, center: Tuple[float, float], zoom: int, size: Tuple[int, int]) -> Image.Image:
+    """Draws filled, outlined rings (each ``(rings, rgb)``) on the image."""
+    base = image.convert("RGBA")
+    layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    for rings, color in rings_by_color:
+        for ring in rings:
+            points = project_ring(ring, center, zoom, size)
+            draw.polygon(points, fill=color + (_CANDIDATE_FILL_ALPHA,))
+            draw.line(points + [points[0]], fill=color + (255,), width=3, joint="curve")
+    return Image.alpha_composite(base, layer).convert("RGB")
+
+
+def _draw_badge(image: Image.Image, position: Tuple[float, float], text: str, color: Tuple[int, int, int]) -> Image.Image:
+    """Draws a numbered round badge centered on ``position``."""
+    badged = image.copy()
+    draw = ImageDraw.Draw(badged)
+    x, y = position
+    radius = 15
+    draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=color, outline=(0, 0, 0), width=2)
+    draw.text((x, y), text, font=load_font(20), fill=(0, 0, 0), anchor="mm")
+    return badged
+
+
+DEMO_MARK = "DEMO - synthetic parcels, not real boundaries"
+
+
+def draw_demo_mark(image: Image.Image) -> Image.Image:
+    """Draws the "DEMO - synthetic parcels" banner along the top-right edge (demo registry candidates).
+
+    Args:
+        image (PIL.Image.Image): Image to draw on (a copy is returned).
+
+    Returns:
+        PIL.Image.Image: New image with the banner.
+    """
+    marked = image.copy()
+    draw = ImageDraw.Draw(marked)
+    font = load_font(max(13, int(image.size[1] * 0.026)))
+    width = int(font.getlength(DEMO_MARK)) + 14
+    left = image.size[0] - width
+    draw.rectangle([left, 0, image.size[0], font.size + 10], fill=(170, 0, 0))
+    draw.text((left + 7, 5), DEMO_MARK, font=font, fill=(255, 255, 255))
+    return marked
+
+
+def _draw_legend(image: Image.Image, lines: Sequence[str]) -> Image.Image:
+    """Draws a caption block (one line per candidate: number, id, area, status) on the top-left corner.
+
+    Args:
+        image (PIL.Image.Image): Image to draw on (a copy is returned).
+        lines (Sequence[str]): Caption lines, already numbered.
+
+    Returns:
+        PIL.Image.Image: New image with the translucent caption block.
+    """
+    font = load_font(max(13, int(image.size[1] * 0.026)))
+    margin = 8
+    width = max(int(font.getlength(line)) for line in lines) + 12
+    height = len(lines) * (font.size + 4) + 8
+    base = image.convert("RGBA")
+    layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    draw.rectangle([margin, margin, margin + width, margin + height], fill=(0, 0, 0, 150))
+    for index, line in enumerate(lines):
+        draw.text((margin + 6, margin + 6 + index * (font.size + 4)), line, font=font, fill=(255, 255, 255, 255))
+    return Image.alpha_composite(base, layer).convert("RGB")
+
+
+def _badge_anchor(candidate, center: Tuple[float, float], zoom: int, size: Tuple[int, int]) -> Tuple[float, float]:
+    """Pixel position of a candidate's number badge: a point guaranteed to lie inside its polygon."""
+    from domain.services.property_sources import geometry_utils as geo
+
+    point = geo.polygonal_part(geo.from_geojson_geometry(candidate.geometry)).representative_point()
+    return project_ring([(point.x, point.y)], center, zoom, size)[0]
+
+
+def _is_demo(candidates) -> bool:
+    """True when any candidate is a synthetic demo registry parcel."""
+    return any("synthetic_demo" in candidate.warnings for candidate in candidates)
+
+
+def render_candidates_image(
+    candidates: Sequence, latitude: float, longitude: float, size: Tuple[int, int] = IMAGE_SIZE,
+    providers: Optional[Sequence[TileProvider]] = None, captions: Optional[Sequence[str]] = None,
+) -> RenderedImage:
+    """Renders the numbered candidate polygons around a searched point over the basemap.
+
+    Each candidate gets a color, an outline, a translucent fill and a numbered badge (1 = first of the list);
+    the searched point is a red marker. The attribution of the basemap and, when a candidate comes from
+    OpenStreetMap, the OpenStreetMap credit are drawn.
+
+    Args:
+        candidates (Sequence[PropertyCandidate]): The candidates, in the order shown to the user.
+        latitude (float): Latitude of the searched point.
+        longitude (float): Longitude of the searched point.
+        size (Tuple[int, int]): Output (width, height) in pixels.
+        providers (Sequence[TileProvider], optional): Tile providers; defaults to ``resolve_providers()``.
+        captions (Sequence[str], optional): One caption per candidate (e.g. id, area and status), drawn as a
+            numbered legend block so the number on each polygon can be matched to its data.
+
+    Returns:
+        RenderedImage: JPEG over a tile basemap, PNG over the neutral background.
+    """
+    rings = [_polygon_rings(candidate) for candidate in candidates]
+    radius = max(
+        [50.0] + [haversine_distance(latitude, longitude, lat, lon) for group in rings for ring in group for lon, lat in ring]
+    ) * 1.15
+    zoom, background, provider = _basemap_for(latitude, longitude, radius, size, providers)
+    center = (latitude, longitude)
+    image = _draw_polygons(background, [(group, CANDIDATE_COLORS[i % len(CANDIDATE_COLORS)]) for i, group in enumerate(rings)], center, zoom, size)
+    for index, candidate in enumerate(candidates):
+        image = _draw_badge(image, _badge_anchor(candidate, center, zoom, size), str(index + 1), CANDIDATE_COLORS[index % len(CANDIDATE_COLORS)])
+    if captions:
+        image = _draw_legend(image, [f"{index + 1}  {text}" for index, text in enumerate(captions)])
+    image = draw_center_marker(image, (size[0] / 2, size[1] / 2))
+    image = draw_scale_bar(image, meters_per_pixel(latitude, zoom))
+    if _is_demo(candidates):
+        image = draw_demo_mark(image)
+    credits = [provider.attribution] if provider is not None else []
+    if any(candidate.source == "osm" for candidate in candidates):
+        credits.append(OSM_ATTRIBUTION)
+    if credits:
+        image = draw_attribution(image, "\n".join(credits))
+    return encode(image, with_basemap=provider is not None)
+
+
+def render_candidate_image(
+    candidate, origin_label: str, size: Tuple[int, int] = IMAGE_SIZE, providers: Optional[Sequence[TileProvider]] = None,
+) -> RenderedImage:
+    """Renders one candidate polygon with its name, area and origin label over the basemap.
+
+    Args:
+        candidate (PropertyCandidate): The candidate to show.
+        origin_label (str): Text describing the origin (from ``agents.yml``), printed on the image.
+        size (Tuple[int, int]): Output (width, height) in pixels.
+        providers (Sequence[TileProvider], optional): Tile providers; defaults to ``resolve_providers()``.
+
+    Returns:
+        RenderedImage: JPEG over a tile basemap, PNG over the neutral background.
+    """
+    from domain.services.property_sources import geometry_utils as geo
+
+    shape = geo.polygonal_part(geo.from_geojson_geometry(candidate.geometry))
+    latitude, longitude = geo.center_of(shape)
+    radius = max(50.0, geo.enclosing_radius_m(shape, (latitude, longitude))) * 1.25
+    zoom, background, provider = _basemap_for(latitude, longitude, radius, size, providers)
+    image = _draw_polygons(background, [(_polygon_rings(candidate), CANDIDATE_COLORS[0])], (latitude, longitude), zoom, size)
+    image = draw_scale_bar(image, meters_per_pixel(latitude, zoom))
+    title = candidate.name or ""
+    image = draw_corner_label(image, f"{title}\n{candidate.area_ha:g} ha\n{origin_label}".strip())
+    if _is_demo([candidate]):
+        image = draw_demo_mark(image)
+    credits = [provider.attribution] if provider is not None else []
+    if candidate.source == "osm":
+        credits.append(OSM_ATTRIBUTION)
+    if credits:
+        image = draw_attribution(image, "\n".join(credits))
     return encode(image, with_basemap=provider is not None)

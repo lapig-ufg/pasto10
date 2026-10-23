@@ -1,0 +1,181 @@
+[
+  {
+    "id": "goias",
+    "result": "ok",
+    "candidates": 0,
+    "containing_point": 0,
+    "seconds": 44.9,
+    "mirror": "overpass-api.de",
+    "tags": [],
+    "elements": 0,
+    "areas_ha": []
+  },
+  {
+    "id": "beni",
+    "result": "ok",
+    "candidates": 0,
+    "containing_point": 0,
+    "seconds": 43.9,
+    "mirror": "overpass-api.de",
+    "tags": [],
+    "elements": 0,
+    "areas_ha": []
+  },
+  {
+    "id": "santa_cruz",
+    "result": "ok",
+    "candidates": 2,
+    "containing_point": 0,
+    "seconds": 52.7,
+    "mirror": "lz4.overpass-api.de",
+    "tags": [
+      "farm",
+      "farmyard"
+    ],
+    "elements": 2,
+    "areas_ha": [
+      1.03,
+      6.09
+    ]
+  },
+  {
+    "id": "chaco",
+    "result": "ok",
+    "candidates": 0,
+    "containing_point": 0,
+    "seconds": 33.4,
+    "mirror": "lz4.overpass-api.de",
+    "tags": [],
+    "elements": 0,
+    "areas_ha": []
+  },
+  {
+    "id": "llanos_colombia",
+    "result": "ok",
+    "candidates": 0,
+    "containing_point": 0,
+    "seconds": 36.9,
+    "mirror": "lz4.overpass-api.de",
+    "tags": [],
+    "elements": 0,
+    "areas_ha": []
+  },
+  {
+    "id": "cajamarca",
+    "result": "ok",
+    "candidates": 0,
+    "containing_point": 0,
+    "seconds": 38.1,
+    "mirror": "lz4.overpass-api.de",
+    "tags": [],
+    "elements": 0,
+    "areas_ha": []
+  },
+  {
+    "id": "pampas_ar",
+    "result": "ok",
+    "candidates": 0,
+    "containing_point": 0,
+    "seconds": 41.3,
+    "mirror": "overpass-api.de",
+    "tags": [],
+    "elements": 1,
+    "areas_ha": []
+  },
+  {
+    "id": "pampas_uy",
+    "result": "ok",
+    "candidates": 0,
+    "containing_point": 0,
+    "seconds": 26.5,
+    "mirror": "overpass-api.de",
+    "tags": [],
+    "elements": 0,
+    "areas_ha": []
+  },
+  {
+    "id": "aysen",
+    "result": "ok",
+    "candidates": 0,
+    "containing_point": 0,
+    "seconds": 33.9,
+    "mirror": "overpass-api.de",
+    "tags": [],
+    "elements": 0,
+    "areas_ha": []
+  },
+  {
+    "id": "llanos_venezuela",
+    "result": "ok",
+    "candidates": 0,
+    "containing_point": 0,
+    "seconds": 46.9,
+    "mirror": "overpass-api.de",
+    "tags": [],
+    "elements": 0,
+    "areas_ha": []
+  },
+  {
+    "id": "kansas",
+    "result": "ok",
+    "candidates": 0,
+    "containing_point": 0,
+    "seconds": 30.0,
+    "mirror": "overpass-api.de",
+    "tags": [],
+    "elements": 0,
+    "areas_ha": []
+  },
+  {
+    "id": "kenya",
+    "result": "ok",
+    "candidates": 0,
+    "containing_point": 0,
+    "seconds": 34.9,
+    "mirror": "overpass-api.de",
+    "tags": [],
+    "elements": 2,
+    "areas_ha": []
+  },
+  {
+    "id": "queensland",
+    "result": "ok",
+    "candidates": 0,
+    "containing_point": 0,
+    "seconds": 31.8,
+    "mirror": "lz4.overpass-api.de",
+    "tags": [],
+    "elements": 0,
+    "areas_ha": []
+  },
+  {
+    "id": "city_control",
+    "result": "ok",
+    "candidates": 5,
+    "containing_point": 0,
+    "seconds": 47.2,
+    "mirror": "overpass-api.de",
+    "tags": [
+      "grass"
+    ],
+    "elements": 289,
+    "areas_ha": [
+      0.65,
+      0.6,
+      0.59,
+      1.03,
+      0.53
+    ]
+  },
+  {
+    "id": "desert_control",
+    "result": "ok",
+    "candidates": 0,
+    "containing_point": 0,
+    "seconds": 40.9,
+    "mirror": "lz4.overpass-api.de",
+    "tags": [],
+    "elements": 0,
+    "areas_ha": []
+  }
+]

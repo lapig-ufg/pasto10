@@ -32,7 +32,7 @@ from domain.services.geospatial.gee import EarthEngineUnavailable
 from domain.services.geospatial.image import parse_center, render_buffer_image
 from domain.services.geospatial.pasture import YearUnavailable, classify_pasture, measure_pasture_area
 from domain.services.geospatial.pasture_image import render_pasture_map
-from domain.utils.tool_utils import area_label, lookup_area, unexpected_error
+from domain.utils.tool_utils import area_label, latest_area_note, lookup_area, unexpected_error, with_note
 
 _COMPONENT = "report_tools"
 _TOOL = "generate_area_bulletin"
@@ -188,6 +188,6 @@ def generate_area_bulletin(run_context: RunContext, area_name: Optional[str] = N
         else:
             content = _text("success", area_name=label, file_name=name, summary="\n".join(summary))
         file = File(content=pdf_bytes, name=name, mime_type="application/pdf", format="pdf")
-        return ToolResult(content=content, files=[file])
+        return ToolResult(content=with_note(content, latest_area_note(run_context, area_name, feature)), files=[file])
     except Exception:
         return unexpected_error(_COMPONENT, _TOOL)
