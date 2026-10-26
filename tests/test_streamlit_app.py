@@ -86,6 +86,7 @@ def _click_property(property_id):
 
     state = store.get(session_id, session_id)["session_state"]
     assert state["terms_accepted"] is True
+    assert state["user_persona"]["name"] and state["user_persona"]["role"]
     assert state["registration_state"] is None
     features = state["all_properties"]["features"]
     assert len(features) == 1
@@ -135,7 +136,7 @@ def test_use_property_falls_back_to_a_chat_prompt(monkeypatch):
         raise RuntimeError("store down")
 
     monkeypatch.setattr("app.test_properties.register_test_property", boom)
-    monkeypatch.setattr("semente.workflows.base_workflow.get_workflow", lambda *a, **k: fake)
+    monkeypatch.setattr("semente.core.harness.get_harness", lambda *a, **k: fake)
     at = _logged_in()
     next(b for b in at.button if b.key == "pasto10_use_property").click()
     at.run()
@@ -149,20 +150,22 @@ def test_generic_error_answer_is_shown_in_english(monkeypatch):
         def run(self, **kwargs):
             return SimpleNamespace(images=[], videos=None, audio=None, files=None)
 
-    monkeypatch.setattr("semente.workflows.base_workflow.get_workflow", lambda *a, **k: NoContentWorkflow())
+    monkeypatch.setattr("semente.core.harness.get_harness", lambda *a, **k: NoContentWorkflow())
     at = _logged_in()
     at.chat_input[0].set_value("hello").run()
     assert not at.exception
-    assert [m["content"] for m in at.session_state["messages"]][-1] == "Erro"
+    assert [m["content"] for m in at.session_state["messages"]][-1] == "Error"
     assert any("Sorry, I could not produce an answer" in m.value for m in at.markdown)
 
 
 def test_translate_handles_labels_prefixes_and_non_strings():
     from app.frontend import translate
 
-    assert translate("Gravar audio") == "Record audio"
-    assert translate("Baixar boletim.pdf") == "Download boletim.pdf"
-    assert translate("**Usuario:** Visitante Anônimo") == "**User:** Anonymous visitor"
+    assert translate("Log In Anonymously") == "Continue anonymously"
+    assert translate("Type your message...") == "Ask about pastures..."
+    assert translate("Error") == "Sorry, I could not produce an answer. Please try again."
+    assert translate("Download boletim.pdf") == "Download boletim.pdf"
+    assert translate("**User:** Anonymous Visitor") == "**User:** Anonymous visitor"
     assert translate("unknown text") == "unknown text"
     assert translate(None) is None
 
@@ -221,7 +224,7 @@ def test_agent_turn_uses_the_session_id_as_user_id(monkeypatch):
         def get_session_state(self, **kwargs):
             return {}
 
-    monkeypatch.setattr("semente.workflows.base_workflow.get_workflow", lambda *a, **k: Recorder())
+    monkeypatch.setattr("semente.core.harness.get_harness", lambda *a, **k: Recorder())
     at = _logged_in()
     at.chat_input[0].set_value("hello").run()
     assert calls[0]["user_id"] == calls[0]["session_id"] == at.session_state["session_id"]

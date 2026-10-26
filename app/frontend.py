@@ -1,14 +1,15 @@
 """Adapts the Semente Streamlit chat to Pasto10 without modifying Semente.
 
-The Semente web app is a monolithic script with fixed Portuguese labels and no
-extension points, so Pasto10 runs it unchanged and wraps the ``st.*`` functions
-it calls. ``install`` is idempotent: Streamlit re-executes the entrypoint on
-every rerun, but this module (and the wrapped functions) lives for the whole
-process.
+The Semente web app is a monolithic script with no stable extension points, so
+Pasto10 runs it unchanged and wraps the ``st.*`` functions it calls. ``install``
+is idempotent: Streamlit re-executes the entrypoint on every rerun, but this
+module (and the wrapped functions) lives for the whole process.
+
+Semente ships an English UI since 0.4.0, so the wrappers now only customise the
+few strings that Pasto10 words differently.
 
 Wrapped behaviours:
-    - Portuguese labels, titles, captions, messages and spinner texts become English.
-    - The "send location" button (fixed coordinates in Brazil) is hidden.
+    - Pasto10 wording for the chat labels, titles and error placeholders.
     - ``st.chat_input`` returns ``st.session_state["_pending_prompt"]`` once, which lets
       other parts of the front end inject a message into the conversation.
     - ``st.selectbox`` over stored users shows the ``nickname`` that Semente saves
@@ -16,9 +17,9 @@ Wrapped behaviours:
     - ``st.file_uploader`` also accepts ``.geojson``/``.json``; their content is
       appended to the next chat message only (Semente only forwards images and audio).
     - The "Debug Mode" toggle is shown only with ``APP_ENV=development`` set explicitly.
-    - ``Workflow.run`` holds the per-session lock, so direct registrations never race an agent turn of
+    - ``Harness.run`` holds the per-session lock, so direct registrations never race an agent turn of
       the same session, and hands an uploaded GeoJSON to the agent through the session state.
-    - Generic "Erro" answers are replaced by an English message.
+    - Generic "Error" answers are replaced by a friendlier English message.
 """
 
 import hashlib
@@ -31,7 +32,9 @@ from app.test_properties import is_development, session_lock
 
 _FLAG = "_pasto10_installed"
 _set_page_config = st.set_page_config
-_HIDDEN_BUTTONS = {"Enviar Localizacao da Propriedade"}
+# Semente 0.4 removed the fixed-coordinates location button; kept empty so a
+# future release can be hidden again without touching the install loop.
+_HIDDEN_BUTTONS: set[str] = set()
 _EXTRA_UPLOAD_TYPES = ["geojson", "json"]
 _GEOJSON_KEY = "_pending_geojson"
 _CHECKED_KEY = "_geojson_checked"
@@ -39,39 +42,25 @@ STATE_KEY = "uploaded_geojson"
 
 LABELS = {
     "Login": "Sign in",
-    "Historico": "History",
-    "Escolha o usuário:": "Choose a user:",
-    "Entrar": "Sign in",
-    "Vazio": "No saved users",
-    "🆕 Novo": "New user",
-    "Identificação do usuário": "Your name or nickname",
-    "Criar": "Create",
-    "Por favor, digite um nome para salvar.": "Please type a name to save.",
-    "Anonimo": "Anonymous",
-    "Entrar Anonimamente": "Continue anonymously",
-    "Configurações": "Settings",
-    "Sair / Trocar Usuário": "Sign out / Switch user",
-    "Envie imagens/áudio (png, jpg, mp3, etc)": "Upload images, audio or a GeoJSON polygon",
-    "Gravar audio": "Record audio",
-    "Pergunte sobre pastagem...": "Ask about pastures...",
-    "Analisando dados e gerando resposta...": "Analyzing data and generating the answer...",
-    "Erro": "Sorry, I could not produce an answer. Please try again.",
+    "Log In": "Sign in",
+    "Empty": "No saved users",
+    "🆕 New": "New user",
+    "User identification": "Your name or nickname",
+    "Log In Anonymously": "Continue anonymously",
+    "Log Out / Switch User": "Sign out / Switch user",
+    "Upload images/audio (png, jpg, mp3, etc)": "Upload images, audio or a GeoJSON polygon",
+    "Type your message...": "Ask about pastures...",
+    "Analyzing data and generating response...": "Analyzing data and generating the answer...",
+    "Error": "Sorry, I could not produce an answer. Please try again.",
 }
 SUBSTRINGS = (
-    ("Visitante Anônimo", "Anonymous visitor"),
+    ("Anonymous Visitor", "Anonymous visitor"),
 )
-PREFIXES = (
-    ("**Usuario:** ", "**User:** "),
-    ("Ola, ", "Hello, "),
-    ("Baixar arquivo", "Download file"),
-    ("Baixar ", "Download "),
-    ("Erro ao processar: ", "Error while processing: "),
-    ("Desculpe, ocorreu um erro: ", "Sorry, an error occurred: "),
-)
+PREFIXES = ()
 
 
 def translate(text):
-    """Translates a Semente UI string to English.
+    """Translates a Semente UI string to the Pasto10 English wording.
 
     Args:
         text: The original string (non-strings are returned untouched).
@@ -141,7 +130,7 @@ def _file_uploader(original):
     Side effects:
         Stores ``{"name", "content", "vertices"}`` of the first valid ``.geojson``/``.json``
         upload (within the domain parser limits) in ``st.session_state["_pending_geojson"]``; the
-        chat input wrapper adds a short note to the message and ``Workflow.run`` (see
+        chat input wrapper adds a short note to the message and ``Harness.run`` (see
         ``_locked_run``) hands the content to the agent. Those files are removed from the returned
         list because Semente only forwards images and audio. Oversized or invalid files are
         rejected with a warning, never truncated. Semente replaces the uploader after each
@@ -271,9 +260,9 @@ def _toggle(original):
 
 
 def _locked_run(original):
-    """Wraps ``Workflow.run``: per-session lock and hand-over of an uploaded GeoJSON.
+    """Wraps ``Harness.run``: per-session lock and hand-over of an uploaded GeoJSON.
 
-    ``Workflow.run`` is synchronous (it returns the final output; ``stream=True`` is ignored by
+    ``Harness.run`` is synchronous (it returns the final output; ``stream=True`` is ignored by
     Semente), so holding the lock for the call covers the whole agent turn.
 
     Side effects:
@@ -312,12 +301,14 @@ def _set_stored_upload(session_id, value) -> None:
 
 
 def _empty(original):
-    """Wraps ``st.empty`` so ``.markdown`` of the placeholder translates the generic error answer."""
+    """Wraps ``st.empty`` so the placeholder shows the friendly generic-error answer."""
 
     def wrapper(*args, **kwargs):
         placeholder = original(*args, **kwargs)
         markdown = placeholder.markdown
-        placeholder.markdown = lambda body, *a, **kw: markdown(translate(body) if body == "Erro" else body, *a, **kw)
+        placeholder.markdown = lambda body, *a, **kw: markdown(
+            translate(body) if body in ("Error", "Erro") else body, *a, **kw
+        )
         return placeholder
 
     wrapper.__wrapped__ = original
@@ -325,10 +316,13 @@ def _empty(original):
 
 
 def _markdown(original):
-    """Wraps ``st.markdown`` so stored generic-error and error-prefix messages are shown in English."""
+    """Wraps ``st.markdown`` so stored generic-error and error-prefix messages keep the Pasto10 wording."""
 
     def wrapper(body, *args, **kwargs):
-        if isinstance(body, str) and (body == "Erro" or body.startswith("Desculpe, ocorreu um erro: ")):
+        if isinstance(body, str) and (
+            body in ("Error", "Erro")
+            or body.startswith(("Desculpe, ocorreu um erro: ", "Sorry, an error occurred: "))
+        ):
             body = translate(body)
         return original(body, *args, **kwargs)
 
@@ -353,7 +347,7 @@ def install():
 
     Side effects:
         Replaces attributes of the ``streamlit`` module and of ``st.sidebar``;
-        wraps ``Workflow.run``; sets ``debug_mode_enabled`` to False in the session (once) so the debug
+        wraps ``Harness.run``; sets ``debug_mode_enabled`` to False in the session (once) so the debug
         panel starts closed.
     """
     st.session_state.setdefault("debug_mode_enabled", False)
@@ -371,7 +365,7 @@ def install():
     st.empty = _empty(st.empty)
     st.markdown = _markdown(st.markdown)
     st.sidebar.title = _translating(st.sidebar.title)
-    from semente.core.orchestrator import Workflow
+    from semente.core.harness import Harness
 
-    Workflow.run = _locked_run(Workflow.run)
+    Harness.run = _locked_run(Harness.run)
     setattr(st, _FLAG, True)

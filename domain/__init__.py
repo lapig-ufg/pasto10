@@ -1,9 +1,9 @@
 """Pasto10 domain — the DomainSpec that Semente assembles into the app.
 
 Exposes ``domain_spec``: the area registration, pasture and biomass tools, the
-animal-unit skill (``domain/skills/livestock``) and the dynamic
-tool/instruction callables (``domain.agent``) driven by the registration
-state machine.
+animal-unit skill (``domain/skills/livestock``), the input guardrails
+(``domain.guardrails``) and the dynamic tool/instruction callables
+(``domain.agent``) driven by the registration state machine.
 
 Tool modules resolve their descriptions from ``domain/prompts/tools.yml`` at
 import time. The Semente app applies the manifest's ``prompts_dir`` before
@@ -22,6 +22,7 @@ from semente.logging import log_warning  # noqa: E402
 from semente.skills import load_skills  # noqa: E402
 
 from domain.agent import get_instructions, get_tools  # noqa: E402
+from domain.guardrails import guardrails  # noqa: E402
 
 skills = load_skills(Path(__file__).resolve().parent / "skills" / "livestock")
 if skills is None:
@@ -31,5 +32,6 @@ domain_spec = DomainSpec(
     name="Pasto10",
     tools=get_tools,
     skills=skills,
+    guardrails=guardrails,
     instructions=get_instructions,
 )

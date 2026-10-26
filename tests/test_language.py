@@ -38,6 +38,13 @@ def test_persona_without_data_uses_the_english_fallback():
     assert _persona_text({}) == _agent_config["persona_fallback"].strip()
 
 
+def test_persona_also_hides_the_current_framework_sentinel():
+    text = _persona_text({"user_persona": {"name": "Not yet known", "role": "Produtor"}})
+
+    assert "Name: not known yet" in text and "Role: rancher / producer" in text
+    assert "Not yet known" not in text
+
+
 def test_technician_role_has_an_english_meaning():
     assert "technical advisor" in _persona_text({"user_persona": {"role": "Técnico"}})
 

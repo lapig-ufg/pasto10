@@ -38,8 +38,9 @@ from domain.utils.feature_utils import get_registered_features, summarize_featur
 
 _agent_config = get_agent_config("single_agent")
 
-# The framework's UserPersona defaults are Portuguese ("Ainda não conhecido"): this prefix detects them as "unknown".
-_SEMENTE_UNKNOWN_PREFIX = "ainda n"
+# The framework's UserPersona default is "Not yet known" ("Ainda não conhecido" in
+# older Semente releases): these prefixes detect it as "unknown".
+_SEMENTE_UNKNOWN_PREFIXES = ("ainda n", "not yet known")
 
 
 def _candidate_features(session_state) -> list[Feature]:
@@ -70,7 +71,7 @@ def _persona_text(session_state) -> str:
 
     def value(key: str) -> str:
         text = str(data.get(key) or "").strip()
-        return unknown if not text or text.casefold().startswith(_SEMENTE_UNKNOWN_PREFIX) else text
+        return unknown if not text or text.casefold().startswith(_SEMENTE_UNKNOWN_PREFIXES) else text
 
     role = value("role")
     preferences = "".join(

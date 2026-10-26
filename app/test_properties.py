@@ -109,8 +109,9 @@ def register_test_property(item: dict, session_id: str) -> dict | None:
     Side effects:
         Creates the session if needed, or updates it in the SQLite/Postgres store:
         appends to ``all_properties``, resets ``registration_state`` and
-        ``candidate_properties`` (a pending registration is dropped) and sets ``terms_accepted`` so
-        the onboarding step is skipped. The read-modify-write runs under the session lock.
+        ``candidate_properties`` (a pending registration is dropped) and marks the
+        onboarding complete (terms accepted and a persona with name and role), so the
+        welcome flow is skipped. The read-modify-write runs under the session lock.
     """
     from semente.configs.prompts import set_prompts_dir
     from semente.database.session_store import store
@@ -149,5 +150,13 @@ def register_test_property(item: dict, session_id: str) -> dict | None:
         state["registration_state"] = None
         state["candidate_properties"] = []
         state["terms_accepted"] = True
+        # Semente 0.4 routes users back to the welcoming agent until the persona
+        # has a name and a role, so a test property also completes the profile.
+        state["user_persona"] = {
+            "name": "Pasto10 tester",
+            "role": "Produtor",
+            "regionality": item.get("country") or "",
+            "communication_preferences": [],
+        }
         store.save(session_id, session_id, session_state=state, runs=loaded["runs"])
     return {"name": name, "area_ha": feature.total_area, "registry_id": registry_id, "demo": bool(parcels)}

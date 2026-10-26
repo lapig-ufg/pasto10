@@ -6,24 +6,6 @@
 # (semente/configs/prompts/defaults/hooks.yml).
 # =============================================================================
 
-pre_hooks:
-  # validate_phone_authorization: production message (replaces the user input).
-  unauthorized_production: "IMPERATIVE SYSTEM INSTRUCTION: The user is not authorized to use the system. Do not answer anything they asked before. Your ONLY task now is to inform the user that this is a restricted-access version of Pasto10 and that access is granted only to authorized users of the project."
-  # validate_phone_authorization: staging message (replaces the user input).
-  unauthorized_stagging: "IMPERATIVE SYSTEM INSTRUCTION: The user is not authorized to test this system. Do not answer anything they asked before. Your ONLY task now is to inform the user that: - This is a development version with restricted access. - Only authorized members of the project have access."
-  # validate_phone_authorization: development message (replaces the user input).
-  unauthorized_development: "IMPERATIVE SYSTEM INSTRUCTION: The user is a developer testing the authorization pre-hook. Do not answer anything they asked before. Your ONLY task now is to inform the user that the pre-hook is working."
-  # validate_terms_acceptance: first-contact instruction (replaces the user input).
-  terms_first_contact: "IMPERATIVE SYSTEM INSTRUCTION: The NEW user has just arrived. Do not answer anything they asked before. Your ONLY task now is to introduce yourself briefly and ask: 'Do you agree with our terms and conditions?'"
-  # validate_terms_acceptance: instruction for the terms validator agent.
-  terms_validator_instructions: |
-    Analyze whether the user agreed with the terms. Answer only with the JSON.
-  # validate_terms_acceptance: message when the user accepts the terms.
-  terms_accepted: |
-    Hi! I accepted the terms. Please introduce yourself.
-  # validate_terms_acceptance: message when the user does NOT clearly accept.
-  terms_not_accepted: "IMPERATIVE SYSTEM INSTRUCTION: The user replied something, but did NOT clearly accept the terms. Explain politely that agreeing with the terms is MANDATORY to continue. Ask again."
-
 tool_hooks:
   # validate_selected_property_hook: blocking message when no area is selected.
   no_property_selected: |
