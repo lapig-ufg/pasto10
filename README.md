@@ -145,6 +145,8 @@ Install the dependencies with `uv sync` and run the tests with `uv run pytest` (
 
 ### Running the chat locally
 
+A step-by-step guide (requirements, Earth Engine credentials, running, testing and troubleshooting) is in [docs/RUNNING.md](docs/RUNNING.md).
+
 The chat UI is the Streamlit chat that ships with Semente, wrapped by `app/streamlit_app.py` (Semente is not modified; `app/frontend.py` documents what is adapted). Semente 0.4 ships an English interface; Pasto10 keeps its own wording for a few labels and the debug panel starts closed. Copy `.env.example` to `.env`, fill in `GOOGLE_API_KEY` and the `GEE_*` variables (`GEE_KEY_FILE` as an absolute path), then run:
 
 ```
