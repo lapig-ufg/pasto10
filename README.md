@@ -49,12 +49,12 @@ Global Pasture Watch leaves its class band masked where its model did not run (w
 
 | Request | Source | Resolution |
 | --- | --- | --- |
-| No year, no month | Global Pasture Watch annual productivity (`ggpp-30m/v1-1/ugpp_m`, band `gc_m2`), latest year (2025) | 30 m |
-| A year from 2000 to 2025 | The same collection, that year | 30 m |
+| No year, no month | The most recent data available for the area: the latest month of the Time2Graze range when Time2Graze has images and productive pasture over the area (flagged partial when the month is incomplete); otherwise the latest annual Global Pasture Watch year (2025), and the answer says so | 10 m or 30 m |
+| A year from 2000 to 2025 | Global Pasture Watch annual productivity (`ggpp-30m/v1-1/ugpp_m`, band `gc_m2`), that year | 30 m |
 | A month (with or without year) | Time2Graze productivity (`projects/wri-lcl-time2graze/assets/ugpp_prod_10m_v1`, band `ugpp`), average of the images of the month times its days | 10 m |
 | A year after 2025 | Time2Graze accumulated over the part of the year with data (the real period and number of days are reported) | 10 m |
 
-The source is chosen for the whole area, never pixel by pixel, and a missing period is reported as unavailable instead of being replaced by another source. Time2Graze covers only recent months (currently a few recent months, discovered dynamically and cached for a day) and only part of the world, so many areas have no monthly data. Pasture pixels are those of the Global Pasture Watch grassland map (`ggc-30m/v1/grassland_c`, masked pixels counted as not grassland); that map ends in 2022, so later periods use the 2022 mask and say so. An area with less than 1% of productive pasture returns no figures.
+The source is chosen for the whole area, never pixel by pixel, and an explicitly requested period that is missing is reported as unavailable instead of being replaced by another source; only the request without year and month falls back (Time2Graze to annual) because it asks for "the latest available". The decision is cached per area and Time2Graze end day for a day. Time2Graze covers only recent months (currently a few recent months, discovered dynamically and cached for a day) and only part of the world, so many areas have no monthly data. Pasture pixels are those of the Global Pasture Watch grassland map (`ggc-30m/v1/grassland_c`, masked pixels counted as not grassland); that map ends in 2022, so later periods use the 2022 mask and say so. An area with less than 1% of productive pasture returns no figures.
 
 Productivity (gC/m²) becomes dry matter with a single constant, `DRY_MATTER_PER_GC_M2 = 0.0135` t DM/ha per gC/m² (0.50 light-use efficiency x 2.7 carbon-to-dry-matter x 0.01 unit conversion). It is a general approximation calibrated for cultivated tropical pastures; elsewhere read it as an order of magnitude. Annual and monthly figures, and Global Pasture Watch and Time2Graze figures, must not be compared with each other.
 
@@ -69,7 +69,7 @@ The pasture mask and the dry-matter conversion are the ones of the biomass tools
 
 ### PDF bulletin
 
-`generate_area_bulletin` consolidates a registered area into a shareable PDF (1-2 pages, built with `reportlab`): location and map, pasture map and area (2022), dry-matter production map and totals (latest annual year), method notes and the data and basemap attributions. It reuses the cached statistics of the pasture and biomass tools (no new Earth Engine measurement), but the maps and basemap tiles are drawn again for every bulletin, which takes about 10-25 seconds. If one section has no data (for example an area without pasture) it is shown as "not available" and the answer is partial; with nothing available no PDF is produced. All the labels of the PDF live in `tools.yml` (`report_tools`). The text is rendered in Latin-1 (covers English, Spanish, Portuguese and other Western European languages); characters outside it show as `?`.
+`generate_area_bulletin` consolidates a registered area into a shareable PDF (1-2 pages, built with `reportlab`): location and map, pasture map and area (2022), dry-matter production map and totals (the most recent data available for the area), method notes and the data and basemap attributions. It reuses the cached statistics of the pasture and biomass tools (no new Earth Engine measurement), but the maps and basemap tiles are drawn again for every bulletin, which takes about 10-25 seconds. If one section has no data (for example an area without pasture) it is shown as "not available" and the answer is partial; with nothing available no PDF is produced. All the labels of the PDF live in `tools.yml` (`report_tools`). The text is rendered in Latin-1 (covers English, Spanish, Portuguese and other Western European languages); characters outside it show as `?`.
 
 ### Animal units (skill)
 

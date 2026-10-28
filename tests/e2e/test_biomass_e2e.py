@@ -2,7 +2,7 @@
 
 Real Earth Engine (needs ``GEE_*``; skipped otherwise). For each property it
 runs the chat flow (register, then measure and map the registered area) with
-the default annual Global Pasture Watch year, an old year and a Time2Graze
+the default (the most recent data available for the area), the latest annual year, an old year and a Time2Graze
 month, checks plausibility (mean between 0 and 25 t DM/ha, total about
 mean x pasture hectares (within the rounding of the mean)), that unavailable Time2Graze months are reported
 without crashing or falling back, that the negative controls have no
@@ -45,10 +45,11 @@ def require_gee():
 def print_summary():
     yield
     if _summary:
-        print("\n\n" + "id".ljust(15) + "kind".ljust(15) + "2025 t/ha".rjust(10) + "total t".rjust(10) + "2005 t/ha".rjust(10)
-              + "  Jul-2026".ljust(24) + "map(s)")
+        print("\n\n" + "id".ljust(15) + "kind".ljust(15) + "default".ljust(10) + "source".ljust(12) + "mean".rjust(8) + "total t".rjust(10)
+              + "partial".rjust(9) + "2025 t/ha".rjust(10) + "2005 t/ha".rjust(10) + "  Jul-2026".ljust(24) + "map(s)")
         for row in _summary:
-            print(row["id"].ljust(15) + row["kind"].ljust(15) + row["mean"].rjust(10) + row["total"].rjust(10)
+            print(row["id"].ljust(15) + row["kind"].ljust(15) + row["period"].ljust(10) + row["source"].ljust(12) + row["mean"].rjust(8)
+                  + row["total"].rjust(10) + row["partial"].rjust(9) + row["annual"].rjust(10)
                   + row["old"].rjust(10) + ("  " + row["month"]).ljust(24) + row["seconds"])
 
 
@@ -71,7 +72,8 @@ def test_biomass_tools_over_global_properties(item):
     context = _register(item)
     registered = dict(context.session_state)
     feature = _feature(item)
-    row = {"id": item.id, "kind": item.kind, "mean": "-", "total": "-", "old": "-", "month": "-", "seconds": "-"}
+    row = {"id": item.id, "kind": item.kind, "mean": "-", "total": "-", "old": "-", "month": "-", "seconds": "-",
+           "period": "-", "source": "-", "partial": "-", "annual": "-"}
     _summary.append(row)
 
     if item.is_control:
@@ -85,8 +87,16 @@ def test_biomass_tools_over_global_properties(item):
         assert context.session_state == registered
         return
 
-    stats = biomass.get_biomass_total(feature)
+    latest = biomass.get_biomass_total(feature)
+    stats = biomass.get_biomass_total(feature, year=2025)
     old = biomass.get_biomass_total(feature, year=OLD_YEAR)
+    assert latest.source in (BiomassSource.TIME2GRAZE, BiomassSource.GPW_ANNUAL)
+    if latest.source is BiomassSource.GPW_ANNUAL:
+        assert latest == stats
+    else:
+        assert latest.scale_m == 10 and latest.n_images > 0 and latest.period_label == f"{latest.year}-{int(latest.end[5:7]):02d}"
+        assert 0 < latest.mean_t_ha <= MAX_PLAUSIBLE_MEAN_T_HA / 12
+        assert latest.total_t == pytest.approx(latest.mean_t_ha * latest.pasture_ha, rel=0.01, abs=0.006 * latest.pasture_ha)
     for current in (stats, old):
         assert current.source is BiomassSource.GPW_ANNUAL and not current.partial
         assert 0 < current.mean_t_ha <= MAX_PLAUSIBLE_MEAN_T_HA
@@ -96,8 +106,12 @@ def test_biomass_tools_over_global_properties(item):
     assert (stats.year, stats.mask_year, old.year, old.mask_year) == (2025, 2022, OLD_YEAR, OLD_YEAR)
 
     text = biomass_tools.get_biomass_total(run_context=context, area_name=item.name.lower())
-    assert f"{stats.mean_t_ha} t DM/ha" in text.content and "2025" in text.content
+    assert f"{latest.mean_t_ha} t DM/ha" in text.content and latest.period_label in text.content
+    assert ("most recent data available" in text.content) == (latest.source is BiomassSource.TIME2GRAZE)
+    assert ("no productive pasture over this area" in text.content) == (latest.source is BiomassSource.GPW_ANNUAL)
     assert "Global Pasture Watch grassland map of 2022" in text.content
+    explicit = biomass_tools.get_biomass_total(run_context=context, area_name=item.name.lower(), year=2025)
+    assert f"{stats.mean_t_ha} t DM/ha" in explicit.content and "gave no period" not in explicit.content
 
     start = time.perf_counter()
     result = biomass_tools.generate_biomass_map(run_context=context)
@@ -105,7 +119,7 @@ def test_biomass_tools_over_global_properties(item):
     assert result.images and Image.open(BytesIO(result.images[0].content)).size == (640, 640)
     out = os.getenv("PASTO10_E2E_OUT")
     if out:
-        Image.open(BytesIO(result.images[0].content)).save(os.path.join(out, f"biomass_{item.id}_2025.png"))
+        Image.open(BytesIO(result.images[0].content)).save(os.path.join(out, f"biomass_{item.id}_latest.png"))
 
     month_text = biomass_tools.get_biomass_total(run_context=context, month=7)
     if "Time2Graze: it covers" in month_text.content or "comes from Time2Graze" in month_text.content:
@@ -123,7 +137,11 @@ def test_biomass_tools_over_global_properties(item):
         row["month"] = "month_unavailable"
 
     assert context.session_state == registered
-    row.update(mean=str(stats.mean_t_ha), total=str(stats.total_t), old=str(old.mean_t_ha), seconds=f"{seconds:.1f}")
+    row.update(
+        mean=str(latest.mean_t_ha), total=str(latest.total_t), old=str(old.mean_t_ha), seconds=f"{seconds:.1f}",
+        period=latest.period_label, source="T2G" if latest.source is BiomassSource.TIME2GRAZE else "GPW(2025)",
+        partial=str(latest.partial), annual=str(stats.mean_t_ha),
+    )
 
 
 def test_requests_that_cannot_be_served_never_fall_back_to_another_source():

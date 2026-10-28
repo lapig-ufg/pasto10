@@ -135,7 +135,7 @@ def build_bulletin_story(data: BulletinData, labels: dict[str, str]) -> list[Flo
         if bio_stats.mask_year < bio_stats.year:
             story.append(pdf.paragraph(
                 labels["pdf_bio_mask_note"].format(mask_year=bio_stats.mask_year, year=bio_stats.year), pdf.SMALL))
-        if bio_stats.source is BiomassSource.TIME2GRAZE and bio_stats.partial:
+        if bio_stats.source is BiomassSource.TIME2GRAZE:
             story.append(pdf.paragraph(labels["pdf_bio_partial_note"].format(days=bio_stats.days_covered), pdf.SMALL))
 
     story.append(pdf.keep_together([

@@ -2,14 +2,18 @@
 
 Source rule, applied to the whole area and never pixel by pixel:
 
-- a year up to ``GPP_LAST_YEAR`` (or no year and no month): Global Pasture
-  Watch annual gross primary productivity (``gc_m2``, gC/m²/year, 30 m),
-  masked by the Global Pasture Watch grassland map of ``min(year, MASK_LAST_YEAR)``;
+- a year up to ``GPP_LAST_YEAR``: Global Pasture Watch annual gross primary
+  productivity (``gc_m2``, gC/m²/year, 30 m), masked by the Global Pasture
+  Watch grassland map of ``min(year, MASK_LAST_YEAR)``;
 - a month, or a year after ``GPP_LAST_YEAR``: Time2Graze productivity (``ugpp``,
   0.1 gC/m²/day, 10 m) averaged over the images of the period and multiplied
   by its number of days. Its coverage is recent and partial: the available
   date range is discovered dynamically (cached for a day) and a period without
-  images is reported as unavailable, never replaced by Global Pasture Watch.
+  images is reported as unavailable, never replaced by Global Pasture Watch;
+- no year and no month (the latest data available): the latest month of the
+  Time2Graze range when Time2Graze has images and productive pasture over the
+  area, otherwise the latest annual Global Pasture Watch year. This decision needs the area, so it
+  lives in ``resolve_latest_period`` and not in ``resolve_biomass_period``.
 
 Productivity is converted to dry matter with ``DRY_MATTER_PER_GC_M2``. The
 result is the accumulated dry-matter production of the period (t DM/ha), not
@@ -59,6 +63,7 @@ _RESULT_CACHE_SIZE = 128
 _RANGE_TTL_SECONDS = 86_400
 _stats_cache = SingleFlightCache(_RESULT_CACHE_SIZE)
 _range_cache = SingleFlightCache(1, ttl=_RANGE_TTL_SECONDS)
+_latest_cache = SingleFlightCache(_RESULT_CACHE_SIZE, ttl=_RANGE_TTL_SECONDS)
 
 
 class BiomassPeriodUnavailable(Exception):
@@ -179,7 +184,11 @@ def _unavailable_range() -> tuple[str, str]:
 
 
 def resolve_biomass_period(year: Optional[int], month: Optional[int]) -> BiomassPeriod:
-    """Applies the source rule to the requested year and month.
+    """Applies the source rule to an explicit year and/or month.
+
+    With neither a year nor a month it returns the latest annual year
+    (``GPP_LAST_YEAR``); the "latest data available" choice that prefers
+    Time2Graze is ``resolve_latest_period``.
 
     Args:
         year (int | None): Requested year.
@@ -197,11 +206,7 @@ def resolve_biomass_period(year: Optional[int], month: Optional[int]) -> Biomass
     if year is not None and not 1 <= year <= 9999:
         raise BiomassPeriodUnavailable("year", str(GPP_FIRST_YEAR), str(GPP_LAST_YEAR))
     if month is None and (year is None or GPP_FIRST_YEAR <= year <= GPP_LAST_YEAR):
-        chosen = GPP_LAST_YEAR if year is None else year
-        return BiomassPeriod(
-            BiomassSource.GPW_ANNUAL, chosen, None, date(chosen, 1, 1), date(chosen, 12, 31),
-            min(chosen, MASK_LAST_YEAR), GPP_SCALE_METERS, False, str(chosen),
-        )
+        return _annual_period(GPP_LAST_YEAR if year is None else year)
     available = t2g_date_range()
     if month is None:
         latest = max(GPP_LAST_YEAR, available[1].year if available else GPP_LAST_YEAR)
@@ -227,6 +232,54 @@ def resolve_biomass_period(year: Optional[int], month: Optional[int]) -> Biomass
         BiomassSource.TIME2GRAZE, year, month, start, end, min(year, MASK_LAST_YEAR),
         T2G_SCALE_METERS, (start, end) != requested, label,
     )
+
+
+def _annual_period(year: int) -> BiomassPeriod:
+    """Returns the Global Pasture Watch annual period of a year."""
+    return BiomassPeriod(
+        BiomassSource.GPW_ANNUAL, year, None, date(year, 1, 1), date(year, 12, 31),
+        min(year, MASK_LAST_YEAR), GPP_SCALE_METERS, False, str(year),
+    )
+
+
+def resolve_latest_period(feature: Feature, roi: "ee.Geometry") -> BiomassPeriod:
+    """Resolves the most recent period with data for an area (no year and no month requested).
+
+    The latest month of the Time2Graze date range when Time2Graze has images
+    over the area in that month and it has productive pasture (monthly,
+    ``partial`` when the month is not fully covered); otherwise, when there is
+    no Time2Graze range, no image over the area or no productive pixel in the
+    month (for example in a cold season), the latest annual Global Pasture
+    Watch year. The check measures the month once (the figures stay in the
+    stats cache). The result is cached per area and Time2Graze end day for a
+    day, so it follows the range when it moves.
+
+    Args:
+        feature (Feature): Registered area.
+        roi (ee.Geometry): Area of interest.
+
+    Returns:
+        BiomassPeriod: The Time2Graze month or the latest annual year.
+
+    Raises:
+        EarthEngineUnavailable: If Earth Engine cannot be initialized.
+        Exception: Any Earth Engine error while counting or measuring the month.
+    """
+    available = t2g_date_range()
+    if available is None:
+        return _annual_period(GPP_LAST_YEAR)
+
+    def compute() -> BiomassPeriod:
+        period = resolve_biomass_period(available[1].year, available[1].month)
+        if _t2g_count(roi, period.start, period.end) == 0:
+            return _annual_period(GPP_LAST_YEAR)
+        try:
+            measure_biomass(_build_image(feature, roi, period), roi)
+        except NoPastureBiomass:
+            return _annual_period(GPP_LAST_YEAR)
+        return period
+
+    return _latest_cache.get_or_compute((pasture.geometry_key(feature), available[1].isoformat()), compute)
 
 
 def _mask_image(mask_year: int) -> "ee.Image":
@@ -329,13 +382,22 @@ def _stats_key(geom_key: str, period: BiomassPeriod) -> tuple:
     return (geom_key, period.source, period.year, period.month, period.end.isoformat(), METHOD_VERSION)
 
 
+def _period_for(feature: Feature, roi: "ee.Geometry", year: Optional[int], month: Optional[int]) -> BiomassPeriod:
+    """Resolves the period of a request: the latest data for the area without year and month, else the explicit rule."""
+    if year is None and month is None:
+        return resolve_latest_period(feature, roi)
+    return resolve_biomass_period(year, month)
+
+
 def build_biomass(feature: Feature, year: Optional[int] = None, month: Optional[int] = None) -> tuple[BiomassImage, "ee.Geometry"]:
     """Builds the productivity image of an area for a period.
 
     Args:
         feature (Feature): Registered area.
-        year (int | None): Requested year (None: latest Global Pasture Watch year).
-        month (int | None): Requested month (1-12), served by Time2Graze.
+        year (int | None): Requested year.
+        month (int | None): Requested month (1-12), served by Time2Graze. Without
+            year and month the most recent data available for the area is used
+            (see ``resolve_latest_period``).
 
     Returns:
         tuple: (BiomassImage, the area as ee.Geometry). Pixels outside the
@@ -346,7 +408,15 @@ def build_biomass(feature: Feature, year: Optional[int] = None, month: Optional[
         BiomassPeriodUnavailable: If the period has no data for the area.
     """
     roi = pasture.feature_geometry(feature)
-    period = resolve_biomass_period(year, month)
+    return _build_image(feature, roi, _period_for(feature, roi, year, month)), roi
+
+
+def _build_image(feature: Feature, roi: "ee.Geometry", period: BiomassPeriod) -> BiomassImage:
+    """Builds the masked productivity image of a resolved period.
+
+    Raises:
+        BiomassPeriodUnavailable: If a Time2Graze period has no images over the area.
+    """
     n_images = None
     if period.source is BiomassSource.TIME2GRAZE:
         n_images = _t2g_count(roi, period.start, period.end)
@@ -359,7 +429,7 @@ def build_biomass(feature: Feature, year: Optional[int] = None, month: Optional[
     image = _mask_biomass(biomass, period.mask_year)
     coverage = _coverage_image(biomass, period.mask_year) if period.source is BiomassSource.TIME2GRAZE else None
     log_debug(f"build_biomass: period={period.label}, source={period.source.name}")
-    return BiomassImage(image, period, n_images, _stats_key(pasture.geometry_key(feature), period), coverage), roi
+    return BiomassImage(image, period, n_images, _stats_key(pasture.geometry_key(feature), period), coverage)
 
 
 def _disk_cache() -> DiskCache:
@@ -432,8 +502,9 @@ def get_biomass_total(feature: Feature, year: Optional[int] = None, month: Optio
 
     Args:
         feature (Feature): Registered area.
-        year (int | None): Requested year (None: latest Global Pasture Watch year).
-        month (int | None): Requested month (1-12), served by Time2Graze.
+        year (int | None): Requested year.
+        month (int | None): Requested month (1-12), served by Time2Graze. Without
+            year and month the most recent data available for the area is used.
 
     Returns:
         BiomassStats: The measured figures.
@@ -445,7 +516,7 @@ def get_biomass_total(feature: Feature, year: Optional[int] = None, month: Optio
         Exception: Any Earth Engine computation error.
     """
     initialize_ee()
-    period = resolve_biomass_period(year, month)
+    period = _period_for(feature, pasture.feature_geometry(feature), year, month)
     key = _stats_key(pasture.geometry_key(feature), period)
     cached = _stats_cache.peek(key) or _load_stats(key)
     if cached is not None:

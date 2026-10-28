@@ -16,6 +16,9 @@ import pytest
 from pypdf import PdfReader
 from semente.backends.toolkit import StateContext
 
+from domain.schemas.biomass import BiomassSource
+from domain.services.geospatial import biomass
+from domain.services.geospatial.geometry import build_buffered_area
 from domain.tools import property_tools, report_tools
 from tests.fixtures.global_properties import GlobalProperty, load_global_properties
 
@@ -80,7 +83,9 @@ def test_bulletin_over_global_properties(item):
     if item.is_control:
         assert partial and "Not available" in text
     else:
-        assert not partial and re.search(r"2025 \(2025-01-01 to 2025-12-31", text) and "Global Pasture Watch" in text
+        latest = biomass.get_biomass_total(build_buffered_area(item.latitude, item.longitude, item.radius_m))
+        assert not partial and re.search(rf"{latest.period_label} \({latest.start} to {latest.end}", text)
+        assert latest.source.value in text and ("short-period and indicative" in text) == (latest.source is BiomassSource.TIME2GRAZE)
         assert item.name in text or item.name.encode("latin-1", "replace").decode("latin-1") in text
     row.update(result="partial" if partial else "full", pages=str(len(reader.pages)), kb=f"{len(document) // 1024}")
     out = os.getenv("PASTO10_E2E_OUT")

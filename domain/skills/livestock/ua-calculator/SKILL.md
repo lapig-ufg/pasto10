@@ -19,7 +19,7 @@ Use this skill to compute the actual stocking rate of a herd, to convert a herd 
 
 ## Process
 
-1. **Get the dry-matter production**: call `get_biomass_total` for the registered area. Note `mean_t_ha`, `total_t`, the productive pasture hectares, the period and its number of days, and the source (Global Pasture Watch annual or Time2Graze). Prefer the annual Global Pasture Watch year (the default of the tool). Use Time2Graze only when the user asks for recent data or no annual data exists.
+1. **Get the dry-matter production**: call `get_biomass_total` for the registered area. Note `mean_t_ha`, `total_t`, the productive pasture hectares, the period and its number of days, and the source (Global Pasture Watch annual or Time2Graze). Prefer the latest annual Global Pasture Watch year: pass `year` explicitly (the latest annual year named in the tool description), because the tool's default without a year is the most recent data, which can be a single Time2Graze month. Use Time2Graze only when the user asks for recent data or no annual data exists.
 2. **CRITICAL - check the period before any calculation**: the formulas below need an ANNUAL total of dry matter (t DM/year).
    - If the data is a full Global Pasture Watch year (365 or 366 days), use `total_t` as is.
    - If it is a Time2Graze period (a month or part of a year), annualize with the factor 365 / days covered (days are reported with the data): annual total = total_t x 365 / days covered. NEVER multiply a month by 12 and never skip this check. Tell the user explicitly that the scenario extrapolates a short period to a year and may be far from the real annual production (growth is seasonal).

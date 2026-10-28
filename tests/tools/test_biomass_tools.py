@@ -142,13 +142,13 @@ def test_failures_use_yaml_texts_and_never_carry_figures(monkeypatch, tool_name,
 def test_descriptions_explain_the_source_rule(tool_name):
     description = get_tool_description("biomass_tools", tool_name)
 
-    for expected in ("2025", "Time2Graze", "NOT standing biomass", "Never pick a month or a year on your own"):
+    for expected in ("2025", "Time2Graze", "NOT standing biomass", "Never pick a month or a year on your own", "most recent data", "neither a year nor a month"):
         assert expected in description
 
 
 def test_every_result_key_exists_for_both_tools():
     keys = [
-        "success", "note_mask_year", "note_time2graze", "note_partial_year", "no_registered_area", "area_not_found", "year_unavailable",
+        "success", "note_latest", "note_latest_annual", "note_mask_year", "note_time2graze", "note_partial_year", "no_registered_area", "area_not_found", "year_unavailable",
         "month_unavailable", "no_pasture", "earth_engine_unavailable", "error",
     ]
     placeholders = dict(
@@ -189,7 +189,7 @@ def test_years_written_in_the_yaml_follow_the_service_constants():
         assert f"from {first} to {last}" in text
     from semente.configs.prompts import get_agent_config
 
-    assert f"year, {last}, is used" in get_agent_config("single_agent")["instructions_default"]
+    assert f"year, {last}, where Time2Graze has no images" in get_agent_config("single_agent")["instructions_default"]
 
 
 def test_circle_areas_and_raster_differences_are_noted_in_the_biomass_text(monkeypatch, fake_service):
@@ -214,3 +214,36 @@ def test_biomass_results_announce_the_latest_area_and_always_name_the_area_and_p
 
     assert "Using South, the user's most recently registered area" in unnamed.content and '"South"' in unnamed.content and "2025" in unnamed.content
     assert "most recently registered" not in named.content and '"North"' in named.content
+
+
+@pytest.mark.parametrize("tool_name", BOTH)
+def test_default_request_announces_the_latest_time2graze_period(fake_service, tool_name):
+    fake_service[1]["value"] = MONTHLY.model_copy(update={"period_label": "2026-08", "partial": True, "end": "2026-08-21", "days_covered": 21})
+
+    content = getattr(biomass_tools, tool_name)(run_context=_context("A")).content
+
+    assert "most recent data available for the area (2026-08, from" in content and "chosen automatically" in content
+    assert "short-period and indicative" in content and "no productive pasture over this area" not in content
+
+
+@pytest.mark.parametrize("tool_name", BOTH)
+def test_default_request_without_time2graze_says_the_annual_fallback_was_used(fake_service, tool_name):
+    content = getattr(biomass_tools, tool_name)(run_context=_context("A")).content
+
+    assert "no images or no productive pasture over this area" in content and "recent data was not available" in content
+    assert "2025" in content and "Global Pasture Watch" in content
+
+
+@pytest.mark.parametrize("tool_name", BOTH)
+@pytest.mark.parametrize("kwargs", [{"year": 2025}, {"month": 7}, {"year": 2026, "month": 7}])
+def test_explicit_periods_have_no_latest_note(fake_service, tool_name, kwargs):
+    content = getattr(biomass_tools, tool_name)(run_context=_context("A"), **kwargs).content
+
+    assert "gave no period" not in content
+
+
+@pytest.mark.parametrize("tool_name", BOTH)
+def test_zero_year_and_month_count_as_not_given(fake_service, tool_name):
+    content = getattr(biomass_tools, tool_name)(run_context=_context("A"), year=0, month=0).content
+
+    assert "gave no period" in content

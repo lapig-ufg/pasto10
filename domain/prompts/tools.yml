@@ -436,15 +436,18 @@ biomass_tools:
 
       Use this tool when the user asks to see the biomass, productivity or dry matter of one of their registered
       areas. If the user names an area, pass it in `area_name`; if not, the latest registered area is used.
-      The default is the latest annual Global Pasture Watch year (2025). Pass `year` for another annual year
-      (2000-2025). Pass `month` (1-12), optionally with `year`, only when the user asks for recent monthly data from
-      Time2Graze, which covers only recent months and part of the world. Never pick a month or a year on your own.
+      When the user gives neither a year nor a month, do not pass them: the tool returns the most recent data
+      available for the area, which is the latest month of Time2Graze (recent monthly data, covering only part of the
+      world) or, where Time2Graze has no images or no productive pasture over the area, the latest annual Global Pasture Watch year (2025).
+      Always state which period and source were returned. Pass `year` for an annual year (2000-2025) only when the
+      user asks for it, and `month` (1-12), optionally with `year`, only when the user asks for a specific month.
+      Never pick a month or a year on your own.
 
       The values are accumulated dry-matter production of the period in t DM/ha, NOT standing biomass and NOT available forage.
 
       Args:
           area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
-          year (int, optional): Reference year (2000-2025 annual; later years use recent Time2Graze data when available).
+          year (int, optional): Reference year (2000-2025 annual; later years use recent Time2Graze data when available). Leave empty, together with `month`, for the most recent data available.
           month (int, optional): Month (1-12) of recent Time2Graze data.
 
       Returns:
@@ -455,6 +458,10 @@ biomass_tools:
         - Mean: {mean_t_ha} t DM/ha
         - Total: {total_t} t DM over {pasture_ha} ha of productive pasture ({pasture_percent}% of the {area_ha} ha analyzed)
         The map image was sent to the user. State the period and source, explain that these are accumulated dry-matter production estimates of the period (not standing biomass or available forage, and not a stocking capacity unless following the ua-calculator skill), and that they are approximate (a general conversion, calibrated for cultivated tropical pastures; elsewhere only an order of magnitude). Never compare annual with monthly figures, nor Global Pasture Watch with Time2Graze figures. Satellite estimates do not replace field verification.
+      note_latest: |
+        Required in the answer: the user gave no period, so these are the most recent data available for the area ({period}, from {source}). Say explicitly that the period was chosen automatically as the most recent available and that it is recent data, not a full year; offer the latest annual figures if the user wants a full-year view.
+      note_latest_annual: |
+        Required in the answer: the user gave no period, and Time2Graze (the source of the most recent data) has no images or no productive pasture over this area, so the latest annual figures were used ({period}, from {source}). Say explicitly that recent data was not available for this area and the latest annual year was used instead.
       note_mask_year: |
         The pasture mask is the Global Pasture Watch grassland map of {mask_year}, the latest available, older than {year}: mention it briefly.
       note_time2graze: |
@@ -485,15 +492,18 @@ biomass_tools:
 
       Use this tool when the user asks how much biomass, dry matter or pasture production an area has. If the
       user names an area, pass it in `area_name`; if not, the latest registered area is used.
-      The default is the latest annual Global Pasture Watch year (2025). Pass `year` for another annual year
-      (2000-2025). Pass `month` (1-12), optionally with `year`, only when the user asks for recent monthly data from
-      Time2Graze, which covers only recent months and part of the world. Never pick a month or a year on your own.
+      When the user gives neither a year nor a month, do not pass them: the tool returns the most recent data
+      available for the area, which is the latest month of Time2Graze (recent monthly data, covering only part of the
+      world) or, where Time2Graze has no images or no productive pasture over the area, the latest annual Global Pasture Watch year (2025).
+      Always state which period and source were returned. Pass `year` for an annual year (2000-2025) only when the
+      user asks for it, and `month` (1-12), optionally with `year`, only when the user asks for a specific month.
+      Never pick a month or a year on your own.
 
       The values are accumulated dry-matter production of the period in t DM/ha, NOT standing biomass and NOT available forage.
 
       Args:
           area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
-          year (int, optional): Reference year (2000-2025 annual; later years use recent Time2Graze data when available).
+          year (int, optional): Reference year (2000-2025 annual; later years use recent Time2Graze data when available). Leave empty, together with `month`, for the most recent data available.
           month (int, optional): Month (1-12) of recent Time2Graze data.
 
       Returns:
@@ -504,6 +514,10 @@ biomass_tools:
         - Mean: {mean_t_ha} t DM/ha
         - Total: {total_t} t DM over {pasture_ha} ha of productive pasture ({pasture_percent}% of the {area_ha} ha analyzed)
         Report the figures in plain language, always stating the period and the source. Explain that these are accumulated dry-matter production estimates of the period (not standing biomass or available forage, and not a stocking capacity unless following the ua-calculator skill), and that they are approximate (a general conversion, calibrated for cultivated tropical pastures; elsewhere only an order of magnitude). Never compare annual with monthly figures, nor Global Pasture Watch with Time2Graze figures. Satellite estimates do not replace field verification.
+      note_latest: |
+        Required in the answer: the user gave no period, so these are the most recent data available for the area ({period}, from {source}). Say explicitly that the period was chosen automatically as the most recent available and that it is recent data, not a full year; offer the latest annual figures if the user wants a full-year view.
+      note_latest_annual: |
+        Required in the answer: the user gave no period, and Time2Graze (the source of the most recent data) has no images or no productive pasture over this area, so the latest annual figures were used ({period}, from {source}). Say explicitly that recent data was not available for this area and the latest annual year was used instead.
       note_mask_year: |
         The pasture mask is the Global Pasture Watch grassland map of {mask_year}, the latest available, older than {year}: mention it briefly.
       note_time2graze: |
@@ -733,8 +747,8 @@ report_tools:
 
       Use this tool when the user asks for a report, bulletin or PDF of an area, or wants to share the analysis.
       If the user names an area, pass it in `area_name`; if not, the latest registered area is used. The bulletin
-      always uses the defaults of the pasture and biomass tools (pasture of 2022, dry matter of the latest annual
-      year); it takes no year.
+      always uses the defaults of the pasture and biomass tools (pasture of 2022, dry matter of the most recent data
+      available for the area, which can be recent Time2Graze data or the latest annual year); it takes no year.
 
       Args:
           area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
@@ -753,7 +767,7 @@ report_tools:
       summary_pasture: |-
         - Pasture {year}: {pasture_ha} ha of {area_ha} ha
       summary_biomass: |-
-        - Dry-matter production {period}: mean {mean_t_ha} t DM/ha, total {total_t} t DM
+        - Dry-matter production {period} ({source}): mean {mean_t_ha} t DM/ha, total {total_t} t DM
       no_data: |
         There is no pasture or dry-matter data for "{area_name}" (the area may have no productive pasture), so no bulletin was generated. Tell the user and do NOT present any figures.
       no_registered_area: |
