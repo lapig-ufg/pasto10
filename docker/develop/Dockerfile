@@ -1,22 +1,18 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-RUN apt update && apt install ffmpeg -y
-
-RUN apt-get update && apt-get -y install libpq-dev gcc git htop curl ffmpeg\
+# git is required for uv to fetch semente-agents from the lapig-ufg/semente
+# repository; ffmpeg is required by the TTS feature (pydub) and by the biomass video tool.
+RUN apt-get update && apt-get -y install git ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-# uv.lock pins semente-agents to the lapig-ufg/semente main branch: uv sync
-# fetches it from the repository. git (below) is required for that fetch.
 COPY pyproject.toml uv.lock ./
 
-RUN uv sync --frozen --no-cache --no-install-project
+RUN uv sync --frozen --no-cache
 
 COPY . .
-
-RUN uv sync --frozen --no-cache
