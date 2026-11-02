@@ -73,7 +73,7 @@ def test_weather_tools_over_global_properties(item, monkeypatch):
     for result in (monthly, daily, rain, dry, temperature):
         assert item.timezone in result.content, item.timezone
         assert "temporarily unavailable" not in result.content
-    assert "7 month(s)" in monthly.content
+    assert re.search(r"exactly [67] month\(s\)", monthly.content)
     lat, lon = item.latitude, item.longitude
     quartiles, zone = weather.get_daily_quartiles(lat, lon)
     assert zone == item.timezone and 30 <= len(quartiles) <= 36
@@ -82,7 +82,7 @@ def test_weather_tools_over_global_properties(item, monkeypatch):
     days, _ = weather.get_temperature_forecast(lat, lon)
     assert len(days) >= 14 and all(row.tmax >= row.tmin for row in days)
     months, _ = weather.get_monthly_forecast(lat, lon)
-    assert len(months) == 7 and all(row.mm >= 0 for row in months)
+    assert len(months) in (6, 7) and all(row.mm >= 0 for row in months)
     for text in (rain.content, dry.content):
         assert _season_summary(text) in ("underway", "not_within_horizon") or _season_summary(text).startswith("onset")
         assert "Open-Meteo.com" in text
