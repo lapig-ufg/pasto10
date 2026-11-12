@@ -12,16 +12,11 @@ from semente.logging import log_debug
 from semente.agents.build_agent import context_blocks
 from semente.configs.prompts import get_agent_config
 
-from domain.schemas.candidate import PropertyCandidate
 from domain.schemas.feature import Feature
 from domain.tools.property_tools import (
     cancel_registration,
     complete_registration,
     confirm_registration,
-    find_property_by_registry_id,
-    find_property_candidates,
-    register_polygon,
-    select_candidate,
     start_buffer_registration_by_coordinate,
 )
 from domain.tools.biomass_tools import generate_biomass_map, generate_biomass_video, get_biomass_total
@@ -83,50 +78,18 @@ def _persona_text(session_state) -> str:
     )
 
 
-def _candidates_text(session_state) -> str:
-    """Builds the numbered list of candidate polygons of the ``choosing`` state.
-
-    One line per candidate, ``"{n}. {origin label} · {name} · {area} ha · {distance}"``, using the display
-    labels of ``feature_type_names``; no internal ids or type keys.
-
-    Args:
-        session_state (dict): The run's session state (``candidate_properties`` holds serialized candidates).
-
-    Returns:
-        str: The list, or ``final_candidate_fallback`` when there is none.
-    """
-    labels = _agent_config["feature_type_names"]
-    lines = []
-    for index, item in enumerate(session_state.get("candidate_properties") or [], start=1):
-        candidate = PropertyCandidate.model_validate(item)
-        parts = [str(labels.get(candidate.type_key, _agent_config["feature_type_fallback"])).strip()]
-        if candidate.name:
-            parts.append(candidate.name)
-        parts.append(f"{candidate.area_ha:g} ha")
-        if candidate.distance_m is not None:
-            parts.append(
-                _agent_config["candidate_inside"].strip() if candidate.distance_m == 0
-                else _agent_config["candidate_away"].strip().format(distance=f"{candidate.distance_m:g}")
-            )
-        lines.append(f"{index}. " + " · ".join(parts))
-    return "\n".join(lines) or _agent_config["final_candidate_fallback"].strip()
-
-
 def get_tools(run_context: RunContext) -> list:
     """Selects the tools available to the agent for the current registration state.
 
-    - ``"choosing"``: the user must pick one of the numbered candidate polygons
-      (``select_candidate``, ``cancel_registration``).
     - ``"pending"``: the user must confirm or reject the candidate area
       (``confirm_registration``, ``cancel_registration``).
     - ``"final"``: the user must name the confirmed area
       (``complete_registration``, ``cancel_registration``).
-    In these three states the four registration starters (``find_property_candidates``,
-    ``find_property_by_registry_id``, ``register_polygon`` and
-    ``start_buffer_registration_by_coordinate``) are also available: calling one replaces the
-    pending registration silently, so a user who brings another area is served in the same reply.
+    In these two states ``start_buffer_registration_by_coordinate`` is also available: calling it
+    replaces the pending registration silently, so a user who brings another coordinate is served
+    in the same reply.
     - otherwise (default): a new area can be registered and registered areas analyzed
-      (``find_property_candidates``, ``find_property_by_registry_id``, ``register_polygon``, ``start_buffer_registration_by_coordinate``, ``generate_pasture_map``,
+      (``start_buffer_registration_by_coordinate``, ``generate_pasture_map``,
       ``get_pasture_area``, ``generate_biomass_map``, ``get_biomass_total``, ``generate_biomass_video``,
       the five weather tools, ``generate_area_bulletin`` and the ``Calculator`` toolkit).
 
@@ -139,14 +102,7 @@ def get_tools(run_context: RunContext) -> list:
     session_state = run_context.session_state or {}
     registration_state = session_state.get("registration_state")
 
-    starters = [
-        find_property_candidates,
-        find_property_by_registry_id,
-        register_polygon,
-        start_buffer_registration_by_coordinate,
-    ]
-    if registration_state == "choosing":
-        return [select_candidate, cancel_registration, *starters]
+    starters = [start_buffer_registration_by_coordinate]
     if registration_state == "pending":
         return [confirm_registration, cancel_registration, *starters]
     if registration_state == "final":
@@ -231,11 +187,7 @@ def get_instructions(run_context: RunContext) -> str:
     registration_state = session_state.get("registration_state")
     ctx_blocks = context_blocks(session_state)
 
-    if registration_state == "choosing":
-        state_text = _agent_config["instructions_choosing"].strip().format(candidates_text=_candidates_text(session_state))
-        instructions = f"{ctx_blocks}\n\n{state_text}".strip()
-
-    elif registration_state == "pending":
+    if registration_state == "pending":
         candidates = _candidate_features(session_state)
         candidate_text = summarize_feature(candidates[0]) if candidates else _agent_config["final_candidate_fallback"].strip()
         state_text = _agent_config["instructions_pending_single"].strip().format(
