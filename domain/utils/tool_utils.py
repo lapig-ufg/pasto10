@@ -57,7 +57,7 @@ def lookup_area(
     feature = find_registered_feature(session_state, area_name)
     if feature is None:
         log_warning(f"{tool_key}: area not found: {area_name!r}")
-        return None, ToolResult(content=get_tool_result_text(component, tool_key, "area_not_found", area_name=area_name))
+        return None, ToolResult(content=get_tool_result_text(component, tool_key, "area_not_found", area_name=str(area_name)[:80]))
     return feature, None
 
 

@@ -105,9 +105,11 @@ def _handle_known_errors(error: Exception, tool_key: str, feature: Optional[Feat
         if error.kind == "month":
             return ToolResult(content=get_tool_result_text(
                 _COMPONENT, tool_key, "month_unavailable", t2g_start=error.first, t2g_end=error.last,
+                area_name=area_label(feature) if feature else "",
             ))
         return ToolResult(content=get_tool_result_text(
             _COMPONENT, tool_key, "year_unavailable", first_year=GPP_FIRST_YEAR, latest_year=GPP_LAST_YEAR,
+            area_name=area_label(feature) if feature else "",
         ))
     if isinstance(error, NoPastureBiomass):
         log_warning(f"{tool_key}: no productive pasture in the area")

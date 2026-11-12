@@ -61,6 +61,7 @@ T2G_GC_M2_PER_UNIT_DAY = 0.1
 GPP_SCALE_METERS = 30
 T2G_SCALE_METERS = 10
 MIN_PASTURE_FRACTION = 0.01
+MAX_CASCADE_MONTHS = 12
 MAX_PIXELS = 1e9
 _HECTARE = 10_000.0
 
@@ -291,6 +292,8 @@ def resolve_biomass_period(year: Optional[int], month: Optional[int]) -> Biomass
     if month is None:
         latest = max(GPP_LAST_YEAR, available[1].year if available else GPP_LAST_YEAR)
         target = min(max(year, GPP_FIRST_YEAR), latest)
+        if available and GPP_LAST_YEAR < target < available[0].year:
+            target = GPP_LAST_YEAR
         period = _annual_period(target) if target <= GPP_LAST_YEAR else _t2g_period(target, None, available)
         return _flag_adjusted(period, str(year))
     if available is None:
@@ -449,11 +452,51 @@ def _stats_key(geom_key: str, period: BiomassPeriod) -> tuple:
     return (geom_key, period.source, period.year, period.month, period.end.isoformat(), METHOD_VERSION)
 
 
+def nearest_month_with_images(roi: "ee.Geometry", period: BiomassPeriod) -> BiomassPeriod:
+    """Walks a Time2Graze month back to the nearest one that has images over the area.
+
+    Time2Graze does not cover every place in every month, so a month inside the coverage can have no image
+    for the area. Instead of reporting it as unavailable, the months before it are tried one at a time, never
+    going before the first covered month and at most ``MAX_CASCADE_MONTHS`` of them (one Earth Engine image
+    count each). When none has images, the latest annual Global Pasture Watch year is used. ``requested_label``
+    keeps what was asked, so the answer can say what was served.
+
+    Args:
+        roi (ee.Geometry): Area of interest.
+        period (BiomassPeriod): A monthly Time2Graze period already clamped to the coverage.
+
+    Returns:
+        BiomassPeriod: The same period when it has images, the nearest earlier month with images, or the latest
+        annual period.
+
+    Raises:
+        EarthEngineUnavailable: If Earth Engine cannot be initialized.
+    """
+    requested = period.requested_label or period.label
+    available = t2g_date_range()
+    year, month = period.year, period.month
+    for _ in range(MAX_CASCADE_MONTHS):
+        candidate = _t2g_period(year, month, available)
+        if _t2g_count(roi, candidate.start, candidate.end) > 0:
+            return _flag_adjusted(candidate, requested)
+        if (year, month) <= (available[0].year, available[0].month):
+            break
+        year, month = (year, month - 1) if month > 1 else (year - 1, 12)
+    return _flag_adjusted(_annual_period(GPP_LAST_YEAR), requested)
+
+
 def _period_for(feature: Feature, roi: "ee.Geometry", year: Optional[int], month: Optional[int]) -> BiomassPeriod:
-    """Resolves the period of a request: the latest data for the area without year and month, else the explicit rule."""
+    """Resolves the period of a request: the latest data for the area without year and month, else the explicit rule.
+
+    A requested month is clamped to the coverage (``resolve_biomass_period``) and then walked back to the nearest
+    month with images over the area (``nearest_month_with_images``).
+    """
     if year is None and month is None:
         return resolve_latest_period(feature, roi)
-    return resolve_biomass_period(year, month)
+    period = resolve_biomass_period(year, month)
+    if period.source is BiomassSource.TIME2GRAZE and period.month is not None:
+        return nearest_month_with_images(roi, period)
+    return period
 
 
 def build_biomass(feature: Feature, year: Optional[int] = None, month: Optional[int] = None) -> tuple[BiomassImage, "ee.Geometry"]:

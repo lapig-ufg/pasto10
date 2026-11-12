@@ -378,7 +378,7 @@ biomass_tools:
       note_latest_annual: |
         Required in the answer: the user gave no period, and Time2Graze (the source of the most recent data) has no images or no productive pasture over this area, so the latest annual figures were used ({period}, from {source}). Say explicitly that recent data was not available for this area and the latest annual year was used instead.
       note_period_adjusted: |
-        Required in the answer: the user asked for {requested}, which is outside the available coverage (annual Global Pasture Watch data {first_year} to {annual_last_year}; Time2Graze recent monthly data, covering part of the world: {t2g_range}), so the figures above are for {period} (source: {source}), the nearest period inside the coverage. Say explicitly, at the start of the answer, that the data shown are for {period} and not for {requested}, and state the coverage. Do not present the figures as being for {requested}.
+        Required in the answer: the user asked for {requested}, which is outside the available coverage (annual Global Pasture Watch data {first_year} to {annual_last_year}; Time2Graze recent monthly data, covering part of the world: {t2g_range}), so the figures above are for {period} (source: {source}), the nearest period available for this area: a month without any satellite image of the area is walked back to the nearest earlier month that has one, and to the latest annual figures when no covered month has one. Say explicitly, at the start of the answer, that the data shown are for {period} and not for {requested}, and state the coverage. Do not present the figures as being for {requested}.
       note_mask_year: |
         The pasture mask is the Global Pasture Watch grassland map of {mask_year}, the latest available, older than {year}: mention it briefly.
       note_time2graze: |
@@ -394,9 +394,9 @@ biomass_tools:
       area_not_found: |
         No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
       year_unavailable: |
-        The requested year is inside the dry-matter coverage ({first_year} to {latest_year}) but has no usable data over this area. Say so, do not present any figures for it, and ask whether the user wants another year.
+        For {area_name}, the requested year is inside the dry-matter coverage ({first_year} to {latest_year}) but has no usable data over this area. Say so, do not present any figures for it, and ask whether the user wants another year.
       month_unavailable: |
-        There is no Time2Graze image over this area for the requested month (an invalid month, an area outside the Time2Graze footprint, or a month inside its coverage that has no image for the area). Time2Graze covers only recent months and part of the world: its data currently spans {t2g_start} to {t2g_end}. Tell the user this, suggest another month or the annual Global Pasture Watch data, and do NOT present any figures or substitute another source on your own.
+        For {area_name}, a Time2Graze month cannot be served: the month is not between 1 and 12, or Time2Graze has no images at all (its data currently spans {t2g_start} to {t2g_end}). Tell the user this, suggest asking for a year of the annual Global Pasture Watch data, and do NOT present any figures or invent a period.
       no_pasture: |
         The area "{area_name}" has no productive pasture according to the Global Pasture Watch grassland map, so there is no dry-matter production to report. Tell the user and do NOT present any figures.
       earth_engine_unavailable: |
@@ -441,7 +441,7 @@ biomass_tools:
       note_latest_annual: |
         Required in the answer: the user gave no period, and Time2Graze (the source of the most recent data) has no images or no productive pasture over this area, so the latest annual figures were used ({period}, from {source}). Say explicitly that recent data was not available for this area and the latest annual year was used instead.
       note_period_adjusted: |
-        Required in the answer: the user asked for {requested}, which is outside the available coverage (annual Global Pasture Watch data {first_year} to {annual_last_year}; Time2Graze recent monthly data, covering part of the world: {t2g_range}), so the figures above are for {period} (source: {source}), the nearest period inside the coverage. Say explicitly, at the start of the answer, that the data shown are for {period} and not for {requested}, and state the coverage. Do not present the figures as being for {requested}.
+        Required in the answer: the user asked for {requested}, which is outside the available coverage (annual Global Pasture Watch data {first_year} to {annual_last_year}; Time2Graze recent monthly data, covering part of the world: {t2g_range}), so the figures above are for {period} (source: {source}), the nearest period available for this area: a month without any satellite image of the area is walked back to the nearest earlier month that has one, and to the latest annual figures when no covered month has one. Say explicitly, at the start of the answer, that the data shown are for {period} and not for {requested}, and state the coverage. Do not present the figures as being for {requested}.
       note_mask_year: |
         The pasture mask is the Global Pasture Watch grassland map of {mask_year}, the latest available, older than {year}: mention it briefly.
       note_time2graze: |
@@ -457,9 +457,9 @@ biomass_tools:
       area_not_found: |
         No registered area matches the name "{area_name}". Apologize, tell the user the name was not found among their registered areas (listed in the <registrations> block) and ask which one they mean.
       year_unavailable: |
-        The requested year is inside the dry-matter coverage ({first_year} to {latest_year}) but has no usable data over this area. Say so, do not present any figures for it, and ask whether the user wants another year.
+        For {area_name}, the requested year is inside the dry-matter coverage ({first_year} to {latest_year}) but has no usable data over this area. Say so, do not present any figures for it, and ask whether the user wants another year.
       month_unavailable: |
-        There is no Time2Graze image over this area for the requested month (an invalid month, an area outside the Time2Graze footprint, or a month inside its coverage that has no image for the area). Time2Graze covers only recent months and part of the world: its data currently spans {t2g_start} to {t2g_end}. Tell the user this, suggest another month or the annual Global Pasture Watch data, and do NOT present any figures or substitute another source on your own.
+        For {area_name}, a Time2Graze month cannot be served: the month is not between 1 and 12, or Time2Graze has no images at all (its data currently spans {t2g_start} to {t2g_end}). Tell the user this, suggest asking for a year of the annual Global Pasture Watch data, and do NOT present any figures or invent a period.
       no_pasture: |
         The area "{area_name}" has no productive pasture according to the Global Pasture Watch grassland map, so there is no dry-matter production to report. Tell the user and do NOT present any figures.
       earth_engine_unavailable: |

@@ -184,7 +184,7 @@ def test_years_written_in_the_yaml_follow_the_service_constants():
         description = get_tool_description("biomass_tools", tool_name)
         assert f"({last})" in description and f"({first}-{last}" in description
         text = get_tool_result_text(
-            "biomass_tools", tool_name, "year_unavailable", first_year=first, latest_year=last,
+            "biomass_tools", tool_name, "year_unavailable", first_year=first, latest_year=last, area_name="A",
         )
         assert f"({first} to {last})" in text
     from semente.configs.prompts import get_agent_config
