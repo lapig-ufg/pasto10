@@ -255,3 +255,10 @@ def test_url_tool_texts_cover_every_failure():
             radius=5, min_radius=50, max_radius=1000, latitude=1, longitude=2, max_latitude=85,
         )
         assert text.strip() and "{" not in text
+
+
+@pytest.mark.parametrize("state", ["pending", "final"])
+def test_analysis_requests_while_an_area_is_pending_are_deferred_not_refused(state):
+    instructions = get_instructions(_context(registration_state=state, candidate_properties=[_candidate()]))
+
+    assert "ANALYSIS REQUESTS" in instructions and "do not say the feature is unavailable" in instructions

@@ -133,8 +133,10 @@ def test_biomass_tools_over_global_properties(item):
             Image.open(BytesIO(month_map.images[0].content)).save(os.path.join(out, f"biomass_{item.id}_2026-07.png"))
         row["month"] = f"{monthly.mean_t_ha} t/ha ({monthly.n_images} img)"
     else:
-        assert "no Time2Graze data" in month_text.content and "Mean:" not in month_text.content
-        row["month"] = "month_unavailable"
+        monthly = biomass.get_biomass_total(feature, month=7)
+        assert monthly.requested_label == "2026-07" and monthly.source is BiomassSource.GPW_ANNUAL
+        assert "not for 2026-07" in month_text.content and "Mean:" in month_text.content
+        row["month"] = "annual fallback"
 
     assert context.session_state == registered
     row.update(
