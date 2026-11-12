@@ -10,7 +10,7 @@ tool_hooks:
   # validate_selected_property_hook: blocking message when no area is selected.
   no_property_selected: |
     It was not possible to complete the analysis because there is no selected area.
-    Apologize to the user. Ask the user to provide the coordinate (latitude and longitude, in decimal degrees) of the area they want to analyze.
+    Apologize to the user. Ask the user to provide the coordinate (latitude and longitude, in decimal degrees) or a Google Maps location link of the area they want to analyze.
   # validate_rate_limit_hook: media already delivered in this session.
   media_already_delivered: |
     The requested media has already been generated with these exact parameters and delivered in this session.

@@ -127,7 +127,8 @@ property_tools:
 
       Use this tool when the user gives a coordinate (latitude/longitude) of a
       place they want to monitor, or wants a different location or radius for
-      the pending area. Call it right away, without asking for agreement first:
+      the pending area. If the user sends a Google Maps link instead, use
+      `start_buffer_registration_by_url`. Call it right away, without asking for agreement first:
       it replaces any pending registration.
 
       Coordinates must be in decimal degrees. Convert a coordinate given in
@@ -154,6 +155,42 @@ property_tools:
         Mention that the radius is {radius} m and that they can choose another radius between {min_radius} and {max_radius} m (default: {default_radius} m).
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  start_buffer_registration_by_url:
+    description: |
+      Starts the registration of a new circular area (buffer) around the point
+      of a Google Maps location link, with a radius in meters. The link is only
+      another way to give the coordinate: the area, the confirmation image and
+      the next steps are the same as for a coordinate.
+
+      Use this tool when the user sends a Google Maps location link (for
+      example `https://www.google.com/maps/place/.../@-15.78,-47.93,15z`, a
+      `google.com/maps?q=-15.78,-47.93` link or a short `maps.app.goo.gl/...`
+      link), or wants a different location given as such a link for the pending
+      area. Call it right away, in the same reply, without asking for agreement
+      first: it replaces any pending registration. Pass the link exactly as the
+      user sent it; never extract or guess the coordinate yourself. Links from
+      other sites, files, registry numbers, and bare place names or addresses
+      are not supported.
+
+      Args:
+          url (str): The Google Maps location link exactly as sent by the user.
+          radius (int): Buffer radius in meters (50 to 1000). Default: 200.
+
+      Returns:
+          ToolResult: Confirmation image of the area and instructions for the next step.
+    results:
+      invalid_radius: |
+        The radius of {radius} m is not accepted. Apologize to the user and explain that the radius must be between {min_radius} and {max_radius} meters, then ask for a radius within that range.
+      invalid_coordinates: |
+        The link points to a coordinate ({latitude}, {longitude}) that is not valid. Apologize to the user and explain that the latitude must be between -{max_latitude} and {max_latitude} degrees and the longitude between -180 and 180 degrees, then ask for another Google Maps link or the coordinate in decimal degrees.
+      no_coordinates: |
+        The link has no coordinate (for example it only names a place). Do not guess a coordinate from the place name. Tell the user that this link cannot be used and ask them to send another Google Maps link of the exact point (in Google Maps: press and hold the spot, then share the location) or the latitude and longitude in decimal degrees.
+      unsupported_link: |
+        The link is not accepted: only secure Google Maps location links are supported. Tell the user, without repeating the link, and ask for a Google Maps location link or the latitude and longitude in decimal degrees. Files, registry numbers, other sites, and place names or addresses are not supported.
+      link_unreachable: |
+        The short link could not be opened right now. Apologize to the user and ask them to try again, to send the full Google Maps link (open the short link in the browser and copy the address) or the latitude and longitude in decimal degrees.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
   confirm_registration:
     description: |
       Confirms the pending area shown in the image.
@@ -169,7 +206,7 @@ property_tools:
           name (str, optional): Name for the area, only when the user already gave one.
     results:
       no_pending_area: |
-        There is no area pending confirmation. Ask the user for the coordinate of the area they want to register first.
+        There is no area pending confirmation. Ask the user for the coordinate (or a Google Maps link) of the area they want to register first.
       confirmed_prompt_name: |
         The area was confirmed:
         > {area_details}
@@ -186,7 +223,7 @@ property_tools:
           name (str): The name chosen by the user for the area.
     results:
       no_pending_area: |
-        There is no area pending registration. Ask the user for the coordinate of the area they want to register first.
+        There is no area pending registration. Ask the user for the coordinate (or a Google Maps link) of the area they want to register first.
       registration_complete: |
         Area registered successfully.
         Name: {name}
@@ -200,13 +237,14 @@ property_tools:
       Cancels the pending registration.
 
       Use this tool if the user says the area shown in the image is NOT the
-      correct one without giving a new coordinate, or wants to cancel the
+      correct one without giving a new coordinate or link, or wants to cancel the
       registration. If the user gives a new coordinate or radius, call
-      `start_buffer_registration_by_coordinate` instead: it replaces the pending
-      area by itself.
+      `start_buffer_registration_by_coordinate` instead, and for a Google Maps
+      link `start_buffer_registration_by_url`: they replace the pending
+      area by themselves.
     results:
       cancelled: |
-        The pending registration was cleared and nothing was saved. Mention it at most once, in a short sentence, and only if the user did not already know; then continue with what the user asked next (for example, if they gave a new coordinate, register it in your next step with `start_buffer_registration_by_coordinate`, or ask them to resend it).
+        The pending registration was cleared and nothing was saved. Mention it at most once, in a short sentence, and only if the user did not already know; then continue with what the user asked next (for example, if they gave a new coordinate, register it in your next step with `start_buffer_registration_by_coordinate`, or `start_buffer_registration_by_url` for a Google Maps link, or ask them to resend it).
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
 

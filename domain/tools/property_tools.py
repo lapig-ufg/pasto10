@@ -1,7 +1,8 @@
 """Area registration tools — the circular buffer around a coordinate, the only registration method.
 
 Flow driven by ``session_state["registration_state"]`` (see ``domain/agent.py``):
-``start_buffer_registration_by_coordinate`` leaves a candidate pending,
+``start_buffer_registration_by_coordinate`` and ``start_buffer_registration_by_url``
+(the coordinate taken from a Google Maps link) leave a candidate pending,
 ``confirm_registration`` moves it to the naming step (or registers it at once
 when a name is given), ``complete_registration`` registers it under a name
 and ``cancel_registration`` aborts at any step. The tools are thin: geometry
@@ -10,7 +11,6 @@ returned to the model comes from ``domain/prompts/tools.yml``. Unexpected
 errors are logged in full and the model only gets a generic message.
 """
 
-import math
 from typing import Optional
 
 from semente import Context as RunContext
@@ -19,8 +19,9 @@ from semente.logging import log_debug, log_warning
 from semente.configs.prompts import get_agent_config, get_tool_description, get_tool_result_text
 
 from domain.schemas.feature import Feature, FeatureMetadata
-from domain.services.geospatial.geometry import build_buffered_area
+from domain.services.geospatial.geometry import MAX_ABS_LATITUDE, build_buffered_area, is_valid_coordinate
 from domain.services.geospatial.image import RenderedImage, render_buffer_image
+from domain.services.geospatial.maps_url import MapsUrlError, extract_coordinates
 from domain.utils.feature_utils import get_registered_features, set_registered_features, summarize_feature
 from domain.utils.tool_utils import unexpected_error
 
@@ -30,9 +31,6 @@ _COMPONENT = "property_tools"
 _MIN_RADIUS_METERS = 50
 _MAX_RADIUS_METERS = 1000
 _DEFAULT_RADIUS_METERS = 200
-# Web Mercator basemaps do not cover the poles; ±85° keeps the image meaningful.
-_MAX_ABS_LATITUDE = 85
-_MAX_ABS_LONGITUDE = 180
 
 
 def _validate_buffer_radius(radius: float, tool_key: str) -> ToolResult | None:
@@ -71,20 +69,13 @@ def _validate_coordinates(latitude: float, longitude: float, tool_key: str) -> T
     Returns:
         ToolResult | None: The invalid-coordinate instructions, or None when valid.
     """
-    try:
-        valid = (
-            math.isfinite(latitude) and math.isfinite(longitude)
-            and abs(latitude) <= _MAX_ABS_LATITUDE
-            and abs(longitude) <= _MAX_ABS_LONGITUDE
-        )
-    except TypeError:
-        valid = False
+    valid = is_valid_coordinate(latitude, longitude)
     if not valid:
         log_warning(f"Invalid coordinates: lat={latitude}, lon={longitude}")
         return ToolResult(
             content=get_tool_result_text(
                 "property_tools", tool_key, "invalid_coordinates",
-                latitude=latitude, longitude=longitude, max_latitude=_MAX_ABS_LATITUDE,
+                latitude=latitude, longitude=longitude, max_latitude=MAX_ABS_LATITUDE,
             )
         )
     return None
@@ -129,6 +120,48 @@ def _build_buffer_candidate(
     return buffer_area, rendered, content
 
 
+def _stage_buffer_candidate(
+    run_context: RunContext, tool_key: str, latitude: float, longitude: float, radius: float,
+) -> ToolResult:
+    """Validates the coordinate, builds the buffer candidate and leaves it pending.
+
+    Shared by the coordinate and the link starters, so both behave exactly
+    the same. The radius must have been validated by the caller.
+
+    Args:
+        run_context (RunContext): The run context holding ``session_state``.
+        tool_key (str): Calling tool, whose ``results`` texts are rendered.
+        latitude (float): Center latitude in decimal degrees.
+        longitude (float): Center longitude in decimal degrees.
+        radius (float): Buffer radius in meters (already validated).
+
+    Returns:
+        ToolResult: Confirmation text plus image on success; the
+        ``invalid_coordinates`` instructions (no image) otherwise.
+
+    Raises:
+        Exception: Any geometry, rendering, summary or template error; the
+        calling tool renders its generic ``error`` text.
+
+    Side effects:
+        On success, sets ``candidate_properties`` (one ``buffer_area``
+        feature) and ``registration_state = "pending"`` after every step has
+        succeeded; any failure leaves the session state untouched.
+    """
+    invalid = _validate_coordinates(latitude, longitude, tool_key)
+    if invalid is not None:
+        return invalid
+
+    buffer_area, rendered, content = _build_buffer_candidate(latitude, longitude, radius)
+    image = Image(content=rendered.content, format=rendered.format, mime_type=rendered.mime_type)
+
+    run_context.session_state["candidate_properties"] = [buffer_area.model_dump()]
+    run_context.session_state["registration_state"] = "pending"
+
+    log_debug(f"{tool_key}: area generated ({buffer_area.id}, {radius} m, {rendered.format})")
+    return ToolResult(content=content, images=[image])
+
+
 @tool(description=get_tool_description("property_tools", "start_buffer_registration_by_coordinate"))
 def start_buffer_registration_by_coordinate(
     run_context: RunContext,
@@ -156,27 +189,61 @@ def start_buffer_registration_by_coordinate(
         (no image) otherwise.
 
     Side effects:
-        On success, sets ``candidate_properties`` (one ``buffer_area``
-        feature) and ``registration_state = "pending"``. The image and the
-        result text are built before the session is touched, so any failure
-        (geometry, rendering, summary or template) leaves the session state
-        untouched.
+        See ``_stage_buffer_candidate``: the session changes only on success.
     """
     tool_key = "start_buffer_registration_by_coordinate"
     log_debug(f"{tool_key}: lat={latitude}, lon={longitude}, radius={radius}")
     try:
-        invalid = _validate_buffer_radius(radius, tool_key) or _validate_coordinates(latitude, longitude, tool_key)
+        invalid = _validate_buffer_radius(radius, tool_key)
         if invalid is not None:
             return invalid
+        return _stage_buffer_candidate(run_context, tool_key, latitude, longitude, radius)
+    except Exception:
+        return unexpected_error(_COMPONENT, tool_key)
 
-        buffer_area, rendered, content = _build_buffer_candidate(latitude, longitude, radius)
-        image = Image(content=rendered.content, format=rendered.format, mime_type=rendered.mime_type)
 
-        run_context.session_state["candidate_properties"] = [buffer_area.model_dump()]
-        run_context.session_state["registration_state"] = "pending"
+@tool(description=get_tool_description("property_tools", "start_buffer_registration_by_url"))
+def start_buffer_registration_by_url(
+    run_context: RunContext,
+    url: str,
+    radius: int = _DEFAULT_RADIUS_METERS,
+):
+    """Starts the registration of a buffer area around the coordinate of a Google Maps link.
 
-        log_debug(f"{tool_key}: area generated ({buffer_area.id}, {radius} m, {rendered.format})")
-        return ToolResult(content=content, images=[image])
+    The link is only another way to give the coordinate: after extracting it
+    (``extract_coordinates``: https Google hosts only, short links resolved
+    with validated redirects) the flow is exactly that of
+    ``start_buffer_registration_by_coordinate``.
+
+    Args:
+        run_context (RunContext): The run context holding ``session_state``.
+        url (str): The Google Maps location link sent by the user.
+        radius (int): Buffer radius in meters (50 to 1000). Default: 200.
+
+    Returns:
+        ToolResult: Confirmation instructions plus image on success;
+        ``invalid_radius``, ``invalid_coordinates``, ``no_coordinates``,
+        ``unsupported_link``, ``link_unreachable`` or ``error`` instructions
+        (no image, no network detail) otherwise.
+
+    Side effects:
+        See ``_stage_buffer_candidate``: the session changes only on success.
+        Short links trigger up to a few HTTPS requests to Google hosts.
+    """
+    tool_key = "start_buffer_registration_by_url"
+    log_debug(f"{tool_key}: radius={radius}")
+    try:
+        invalid = _validate_buffer_radius(radius, tool_key)
+        if invalid is not None:
+            return invalid
+        try:
+            latitude, longitude = extract_coordinates(url)
+        except MapsUrlError as error:
+            log_warning(f"{tool_key}: link rejected ({error.reason})")
+            if error.reason == "invalid_coordinates":
+                return _validate_coordinates(error.latitude, error.longitude, tool_key)
+            return ToolResult(content=get_tool_result_text(_COMPONENT, tool_key, error.reason))
+        return _stage_buffer_candidate(run_context, tool_key, latitude, longitude, radius)
     except Exception:
         return unexpected_error(_COMPONENT, tool_key)
 
