@@ -25,7 +25,7 @@ from domain.services.geospatial.basemap import (
     meters_per_pixel,
     resolve_providers,
 )
-from domain.services.geospatial.geometry import haversine_distance, normalize_longitude
+from domain.services.geospatial.geometry import normalize_longitude
 
 IMAGE_SIZE = (640, 640)
 NEUTRAL_BACKGROUND = (226, 226, 220)

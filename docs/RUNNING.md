@@ -87,7 +87,7 @@ Health check: `curl http://localhost:8501/_stcore/health` answers `ok`.
 
 1. Choose **anonymous** sign-in.
 2. In the sidebar, **Test properties**: pick one of the 15 and click **Use this property**. It registers a
-   synthetic demo parcel (named `... - DEMO-XXX-0001`) and accepts the terms, so you can ask right away.
+   circular area (buffer) with the radius of the property and accepts the terms, so you can ask right away.
    The picker only exists with `APP_ENV=development`, which `run_local.sh` already sets.
 3. Ask in English, for example:
    - `Show me the pasture map and the total pasture area.`
@@ -96,12 +96,13 @@ Health check: `curl http://localhost:8501/_stcore/health` answers `ok`.
    - `Make the biomass time-series video.` (needs `ffmpeg`)
    - `What is the rain forecast for the next weeks?`
    - `How many animal units can this area support?`
-4. To use your own area, type `Register my farm at latitude -33.0, longitude -56.0 with a 1000 m radius`,
-   or attach a `.geojson` polygon (valid JSON, up to 1 MB).
+4. To use your own area, type `Register my farm at latitude -33.0, longitude -56.0 with a 1000 m radius`
+   (radius from 50 to 1000 m, default 200 m), confirm the circle and give it a name. Circular areas around a
+   coordinate are the only way to register an area.
 
 What to expect: each answer shows the map or figures and says the year and the source. Maps after 2022 are
 experimental estimates and the assistant warns about it; the two negative controls (Lima, Atacama) should
-return little or no pasture. The synthetic demo registry is labeled **DEMO** everywhere.
+return little or no pasture. Registered areas are approximate circles, not property boundaries.
 
 First requests are slow (Earth Engine, up to about a minute); repeated ones are served from cache.
 

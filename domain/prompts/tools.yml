@@ -129,7 +129,6 @@ property_tools:
       place they want to monitor and agrees to register the area around it.
       If the user explicitly asks to register an area and gives the
       coordinate, call this tool right away, without asking for agreement first.
-      The area is generated locally; no external registry is queried.
 
       Coordinates must be in decimal degrees. Convert a coordinate given in
       degrees, minutes and seconds (DMS) before calling: decimal = |D| + M/60 + S/3600,
