@@ -12,7 +12,7 @@ from domain.services.geospatial.geometry import build_buffered_area
 from domain.utils.feature_utils import set_registered_features, summarize_feature
 from domain.schemas.feature import FeatureMetadata, RegisteredFeatures
 
-STARTERS = {"start_buffer_registration_by_coordinate"}
+STARTERS = {"start_buffer_registration_by_coordinate", "start_buffer_registration_by_url"}
 WEATHER_TOOLS = {
     "get_monthly_precipitation_forecast", "get_daily_precipitation_forecast", "get_rain_season_onset_forecast",
     "get_dry_season_onset_forecast", "get_temperature_forecast",
@@ -48,7 +48,7 @@ def test_domain_spec_wires_dynamic_callables():
     "registration_state, expected",
     [
         (None, {
-            "start_buffer_registration_by_coordinate", "generate_pasture_map", "get_pasture_area",
+            *STARTERS, "generate_pasture_map", "get_pasture_area",
             "generate_biomass_map", "get_biomass_total", "generate_biomass_video", *WEATHER_TOOLS, "generate_area_bulletin", *CALCULATOR_TOOLS,
         }),
         ("pending", {"confirm_registration", "cancel_registration", *STARTERS}),
@@ -90,7 +90,8 @@ def test_pending_instructions_switch_flows_in_the_same_reply_without_narrating_c
     pending = _agent_config["instructions_pending_single"]
 
     assert "different radius" in pending and "location" in pending
-    assert "call `start_buffer_registration_by_coordinate` with the new values right away" in pending
+    assert "call `start_buffer_registration_by_coordinate` (or `start_buffer_registration_by_url`" in pending
+    assert "with the new values right away" in pending
     assert "IN THE SAME REPLY" in pending and 'Never write "one moment"' in pending
     assert "do not narrate a cancellation" in pending and "CURRENT message" in pending
 
@@ -222,3 +223,35 @@ def test_biomass_rule_allows_stocking_capacity_only_through_the_skill():
 
     assert "EXCEPT by following the `ua-calculator` skill" in default
     assert "never by multiplying a month by 12" in default
+
+
+@pytest.mark.parametrize("key", ["instructions_default", "instructions_pending_single", "instructions_final"])
+def test_every_state_routes_google_maps_links_to_the_url_tool(key):
+    text = _agent_config[key]
+
+    assert "start_buffer_registration_by_url" in text
+    assert "Google Maps" in text
+    assert "a map link" not in text and "from a name, an address or a link" not in text
+    assert "a link that is not from Google Maps" in text or key == "instructions_default"
+
+
+def test_default_instructions_call_the_url_tool_in_the_same_reply_without_permission():
+    default = _agent_config["instructions_default"]
+
+    assert "call `start_buffer_registration_by_url` with the link exactly as sent, in the SAME reply" in default
+    assert "without asking for permission" in default
+    assert "GeoJSON" in default and "place name or address" in default
+    assert "a link that is not from Google Maps" in default
+
+
+def test_url_tool_texts_cover_every_failure():
+    from semente.configs.prompts import get_tool_description, get_tool_result_text
+
+    description = get_tool_description("property_tools", "start_buffer_registration_by_url")
+    assert "Google Maps" in description and "url (str)" in description
+    for key in ("no_coordinates", "unsupported_link", "link_unreachable", "invalid_radius", "invalid_coordinates", "error"):
+        text = get_tool_result_text(
+            "property_tools", "start_buffer_registration_by_url", key,
+            radius=5, min_radius=50, max_radius=1000, latitude=1, longitude=2, max_latitude=85,
+        )
+        assert text.strip() and "{" not in text

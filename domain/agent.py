@@ -18,6 +18,7 @@ from domain.tools.property_tools import (
     complete_registration,
     confirm_registration,
     start_buffer_registration_by_coordinate,
+    start_buffer_registration_by_url,
 )
 from domain.tools.biomass_tools import generate_biomass_map, generate_biomass_video, get_biomass_total
 from domain.tools.report_tools import generate_area_bulletin
@@ -85,11 +86,12 @@ def get_tools(run_context: RunContext) -> list:
       (``confirm_registration``, ``cancel_registration``).
     - ``"final"``: the user must name the confirmed area
       (``complete_registration``, ``cancel_registration``).
-    In these two states ``start_buffer_registration_by_coordinate`` is also available: calling it
-    replaces the pending registration silently, so a user who brings another coordinate is served
-    in the same reply.
+    In these two states the starters ``start_buffer_registration_by_coordinate`` and
+    ``start_buffer_registration_by_url`` (coordinate taken from a Google Maps link) are also available:
+    calling one replaces the pending registration silently, so a user who brings another coordinate
+    or link is served in the same reply.
     - otherwise (default): a new area can be registered and registered areas analyzed
-      (``start_buffer_registration_by_coordinate``, ``generate_pasture_map``,
+      (the two starters, ``generate_pasture_map``,
       ``get_pasture_area``, ``generate_biomass_map``, ``get_biomass_total``, ``generate_biomass_video``,
       the five weather tools, ``generate_area_bulletin`` and the ``Calculator`` toolkit).
 
@@ -102,7 +104,7 @@ def get_tools(run_context: RunContext) -> list:
     session_state = run_context.session_state or {}
     registration_state = session_state.get("registration_state")
 
-    starters = [start_buffer_registration_by_coordinate]
+    starters = [start_buffer_registration_by_coordinate, start_buffer_registration_by_url]
     if registration_state == "pending":
         return [confirm_registration, cancel_registration, *starters]
     if registration_state == "final":
