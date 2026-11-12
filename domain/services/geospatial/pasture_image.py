@@ -15,7 +15,7 @@ from typing import Optional, Sequence, Tuple
 
 import ee
 import requests
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
 from domain.schemas.feature import Feature
 from domain.schemas.pasture import PastureAreaStats, PastureSource
@@ -137,6 +137,27 @@ def blend_overlay(background: Image.Image, overlay: Image.Image) -> Image.Image:
     return Image.alpha_composite(background.convert("RGBA"), overlay).convert("RGB")
 
 
+def clip_overlay(overlay: Image.Image, ring: list) -> Image.Image:
+    """Keeps the overlay only inside the property ring, so the map shows the area of interest and nothing around it.
+
+    The ring is rasterized at 4x and reduced, which gives the clipped edge smooth anti-aliasing. The overlay's own
+    transparency is kept inside the ring.
+
+    Args:
+        overlay (PIL.Image.Image): RGBA overlay of the whole view.
+        ring (list): The property's outer ring as ``(x, y)`` pixel positions of the same view.
+
+    Returns:
+        PIL.Image.Image: New RGBA overlay, fully transparent outside the ring.
+    """
+    scale = 4
+    mask = Image.new("L", (overlay.width * scale, overlay.height * scale), 0)
+    ImageDraw.Draw(mask).polygon([(x * scale, y * scale) for x, y in ring], fill=255)
+    clipped = overlay.copy()
+    clipped.putalpha(ImageChops.multiply(overlay.getchannel("A"), mask.resize(overlay.size, Image.LANCZOS)))
+    return clipped
+
+
 def draw_outline(image: Image.Image, points: list) -> Image.Image:
     """Draws the buffer outline (no fill, so the pasture stays visible)."""
     outlined = image.copy()
@@ -211,8 +232,9 @@ def render_pasture_map(
         background = Image.new("RGB", size, NEUTRAL_BACKGROUND)
 
     bounds = mercator_bounds(latlon_to_pixel(latitude, longitude, zoom), zoom, size)
-    image = blend_overlay(background, _fetch_overlay(classification_image, bounds, size, scale))
-    image = draw_outline(image, project_ring(feature.get_coords()[0][0], (latitude, longitude), zoom, size))
+    ring = project_ring(feature.get_coords()[0][0], (latitude, longitude), zoom, size)
+    image = blend_overlay(background, clip_overlay(_fetch_overlay(classification_image, bounds, size, scale), ring))
+    image = draw_outline(image, ring)
     image = draw_center_marker(image, (size[0] / 2, size[1] / 2))
     mpp = meters_per_pixel(latitude, zoom)
     image = draw_scale_bar(image, mpp)

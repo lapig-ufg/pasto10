@@ -40,6 +40,7 @@ from domain.services.geospatial.image import (
 )
 from domain.services.geospatial.pasture_image import (
     blend_overlay,
+    clip_overlay,
     download_thumbnail,
     draw_outline,
     mercator_bounds,
@@ -177,8 +178,9 @@ def render_biomass_map(
         background = Image.new("RGB", size, NEUTRAL_BACKGROUND)
 
     bounds = mercator_bounds(latlon_to_pixel(latitude, longitude, zoom), zoom, size)
-    image = blend_overlay(background, fetch_overlay(biomass_image, stats, bounds, size))
-    image = draw_outline(image, project_ring(feature.get_coords()[0][0], (latitude, longitude), zoom, size))
+    ring = project_ring(feature.get_coords()[0][0], (latitude, longitude), zoom, size)
+    image = blend_overlay(background, clip_overlay(fetch_overlay(biomass_image, stats, bounds, size), ring))
+    image = draw_outline(image, ring)
     image = draw_center_marker(image, (size[0] / 2, size[1] / 2))
     mpp = meters_per_pixel(latitude, zoom)
     image = draw_scale_bar(image, mpp)
