@@ -8,6 +8,7 @@ from PIL import Image
 from domain.schemas.biomass import BiomassSource, BiomassStats
 from domain.services.geospatial import biomass_image
 from domain.services.geospatial.geometry import build_buffered_area
+from domain.services.geospatial.image import NEUTRAL_BACKGROUND
 
 
 def _stats(source=BiomassSource.GPW_ANNUAL, label="2025"):
@@ -22,7 +23,7 @@ def _stats(source=BiomassSource.GPW_ANNUAL, label="2025"):
 def fake_overlay(monkeypatch):
     def fetch(image, stats, bounds, size, value_range=None):
         overlay = Image.new("RGBA", size, (0, 0, 0, 0))
-        overlay.paste(Image.new("RGBA", (100, 100), (0, 200, 0, 255)), (20, 300))
+        overlay.paste(Image.new("RGBA", size, (0, 200, 0, 255)), (0, 0))
         return overlay
 
     monkeypatch.setattr(biomass_image, "fetch_overlay", fetch)
@@ -33,8 +34,9 @@ def test_render_over_neutral_background_is_png(fake_overlay):
 
     image = Image.open(BytesIO(rendered.content)).convert("RGB")
     assert rendered.format == "png" and image.size == (640, 640)
-    r, g, b = image.getpixel((70, 350))
+    r, g, b = image.getpixel((320, 340))
     assert g > r and g > b
+    assert image.getpixel((70, 350)) == NEUTRAL_BACKGROUND
 
 
 def test_render_over_basemap_is_jpeg(fake_overlay, online_tiles):
