@@ -451,3 +451,35 @@ def test_summarize_feature_with_unknown_placeholder_uses_safe_summary(monkeypatc
     assert summary == feature_utils._safe_summary(feature, config)
     assert feature.id not in summary
     assert "buffer_area" not in summary
+
+
+@pytest.mark.parametrize("state", ["pending", "final"])
+def test_starting_a_buffer_replaces_a_pending_or_final_registration_silently(state):
+    run_context = _pending_context()
+    run_context.session_state["registration_state"] = state
+    first_id = run_context.session_state["candidate_properties"][0]["feature_id"]
+
+    result = _start(run_context, latitude=-33.0, longitude=-56.0, radius=1000)
+
+    assert run_context.session_state["registration_state"] == "pending"
+    candidates = run_context.session_state["candidate_properties"]
+    assert len(candidates) == 1 and candidates[0]["feature_id"] != first_id
+    assert "-33.0, -56.0" in result.content
+
+
+def test_cancel_registration_from_the_final_state_clears_the_candidate():
+    run_context = _pending_context()
+    property_tools.confirm_registration(run_context=run_context)
+    assert run_context.session_state["registration_state"] == "final"
+
+    property_tools.cancel_registration(run_context=run_context)
+
+    assert run_context.session_state["registration_state"] is None
+    assert run_context.session_state["candidate_properties"] == []
+
+
+def test_cancelled_text_points_to_the_buffer_tool_and_never_to_a_search():
+    content = property_tools.cancel_registration(run_context=_pending_context()).content
+
+    assert "start_buffer_registration_by_coordinate" in content
+    assert "search" not in content.lower()

@@ -136,4 +136,4 @@ PASTO10_E2E_OUT=/some/dir uv run pytest -m e2e -s       # also keep maps and PDF
 | Video fails | Install `ffmpeg` |
 | `ImportError` when Streamlit starts | Use `uv sync --frozen`; Streamlit is pinned below 1.53 |
 | Answers in the wrong language or model errors | Check `GOOGLE_API_KEY` |
-| A request takes very long | First Earth Engine call or a slow OpenStreetMap lookup (capped at 12 s); retry |
+| A request takes very long | First Earth Engine call or a slow basemap tile download (3 s connect and 4 s read per tile; it falls back to a plain background); retry |

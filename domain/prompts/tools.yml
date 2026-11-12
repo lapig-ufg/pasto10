@@ -126,9 +126,9 @@ property_tools:
       given its coordinate and a radius in meters.
 
       Use this tool when the user gives a coordinate (latitude/longitude) of a
-      place they want to monitor and agrees to register the area around it.
-      If the user explicitly asks to register an area and gives the
-      coordinate, call this tool right away, without asking for agreement first.
+      place they want to monitor, or wants a different location or radius for
+      the pending area. Call it right away, without asking for agreement first:
+      it replaces any pending registration.
 
       Coordinates must be in decimal degrees. Convert a coordinate given in
       degrees, minutes and seconds (DMS) before calling: decimal = |D| + M/60 + S/3600,
@@ -200,11 +200,13 @@ property_tools:
       Cancels the pending registration.
 
       Use this tool if the user says the area shown in the image is NOT the
-      correct one, wants a different location or radius, or wants to cancel
-      the registration.
+      correct one without giving a new coordinate, or wants to cancel the
+      registration. If the user gives a new coordinate or radius, call
+      `start_buffer_registration_by_coordinate` instead: it replaces the pending
+      area by itself.
     results:
       cancelled: |
-        The pending registration was cleared and nothing was saved. Mention it at most once, in a short sentence, and only if the user did not already know; then continue with what the user asked next (for example, if they gave a new coordinate, search for areas around it in your next step, or ask them to resend it).
+        The pending registration was cleared and nothing was saved. Mention it at most once, in a short sentence, and only if the user did not already know; then continue with what the user asked next (for example, if they gave a new coordinate, register it in your next step with `start_buffer_registration_by_coordinate`, or ask them to resend it).
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
 
