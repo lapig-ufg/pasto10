@@ -68,7 +68,7 @@ def _success_text(tool_key: str, feature: Feature, stats: BiomassStats, latest: 
         notes.insert(0, get_tool_result_text(
             _COMPONENT, tool_key, "note_period_adjusted", requested=stats.requested_label, period=stats.period_label,
             source=stats.source.value, first_year=coverage.first_year, annual_last_year=coverage.annual_last_year,
-            t2g_start=coverage.t2g_start or "none", t2g_end=coverage.t2g_end or "none",
+            t2g_range=f"{coverage.t2g_start} to {coverage.t2g_end}" if coverage.t2g_start else "not available",
         ))
     if latest:
         key = "note_latest" if stats.source is BiomassSource.TIME2GRAZE else "note_latest_annual"

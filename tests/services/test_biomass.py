@@ -490,3 +490,14 @@ def test_latest_falls_back_to_the_annual_year_when_the_month_has_no_productive_p
     assert stats.source is BiomassSource.GPW_ANNUAL and stats.period_label == "2025"
     with pytest.raises(biomass.NoPastureBiomass):
         biomass.get_biomass_total(_feature(), None, 8)
+
+
+def test_annual_year_inside_the_global_pasture_watch_range_never_queries_time2graze(monkeypatch):
+    def boom():
+        raise AssertionError("t2g_date_range must not be called for an annual year inside the GPW range")
+
+    monkeypatch.setattr(biomass, "t2g_date_range", boom)
+
+    period = biomass.resolve_biomass_period(2020, None)
+
+    assert period.year == 2020 and period.requested_label is None

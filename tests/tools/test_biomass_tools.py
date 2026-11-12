@@ -117,7 +117,7 @@ def test_no_registered_area_and_unknown_name(fake_service, tool_name):
 @pytest.mark.parametrize(
     "error, expected",
     [
-        (BiomassPeriodUnavailable("year", "2000", "2025"), "from 2000 to 2025"),
+        (BiomassPeriodUnavailable("year", "2000", "2025"), "inside the dry-matter coverage (2000 to 2025)"),
         (BiomassPeriodUnavailable("month", "2026-06-27", "2026-08-21"), "2026-06-27 to 2026-08-21"),
         (NoPastureBiomass(), "no productive pasture"),
         (EarthEngineUnavailable("no creds"), "temporarily unavailable"),
@@ -186,7 +186,7 @@ def test_years_written_in_the_yaml_follow_the_service_constants():
         text = get_tool_result_text(
             "biomass_tools", tool_name, "year_unavailable", first_year=first, latest_year=last,
         )
-        assert f"from {first} to {last}" in text
+        assert f"({first} to {last})" in text
     from semente.configs.prompts import get_agent_config
 
     assert f"year, {last}, where Time2Graze has no images" in get_agent_config("single_agent")["instructions_default"]
@@ -249,6 +249,10 @@ class _Coverage:
     first_year, last_year, annual_last_year, t2g_start, t2g_end = 2000, 2026, 2025, "2026-06-27", "2026-08-21"
 
 
+class _NoTime2GrazeCoverage(_Coverage):
+    t2g_start = t2g_end = None
+
+
 @pytest.mark.parametrize("tool_name", BOTH)
 def test_adjusted_period_is_stated_with_the_requested_one_and_the_coverage(fake_service, monkeypatch, tool_name):
     _, stats = fake_service
@@ -272,7 +276,7 @@ def test_every_adjustment_note_exists_for_both_tools():
     for tool_name in BOTH:
         text = get_tool_result_text(
             "biomass_tools", tool_name, "note_period_adjusted", requested="2100", period="2026", source="s",
-            first_year=2000, annual_last_year=2025, t2g_start="a", t2g_end="b",
+            first_year=2000, annual_last_year=2025, t2g_range="a to b",
         )
         assert "2100" in text and "2026" in text
 
@@ -282,3 +286,14 @@ def test_zero_year_and_month_count_as_not_given(fake_service, tool_name):
     content = getattr(biomass_tools, tool_name)(run_context=_context("A"), year=0, month=0).content
 
     assert "gave no period" in content
+
+
+@pytest.mark.parametrize("tool_name", BOTH)
+def test_adjusted_period_without_time2graze_says_it_is_not_available(fake_service, monkeypatch, tool_name):
+    _, stats = fake_service
+    stats["value"] = ADJUSTED
+    monkeypatch.setattr(biomass_tools, "biomass_coverage", lambda: _NoTime2GrazeCoverage)
+
+    content = getattr(biomass_tools, tool_name)(run_context=_context("A"), year=2030, month=1).content
+
+    assert "not available" in content and "none to none" not in content

@@ -285,6 +285,8 @@ def resolve_biomass_period(year: Optional[int], month: Optional[int]) -> Biomass
         raise BiomassPeriodUnavailable("month", *_unavailable_range())
     if year is None and month is None:
         return _annual_period(GPP_LAST_YEAR)
+    if month is None and GPP_FIRST_YEAR <= year <= GPP_LAST_YEAR:
+        return _annual_period(year)
     available = t2g_date_range()
     if month is None:
         latest = max(GPP_LAST_YEAR, available[1].year if available else GPP_LAST_YEAR)

@@ -99,7 +99,7 @@ Health check: `curl http://localhost:8501/_stcore/health` answers `ok`.
 4. To use your own area, type `Register my farm at latitude -33.0, longitude -56.0 with a 1000 m radius`
    (radius from 50 to 1000 m, default 200 m), confirm the circle and give it a name. You can also paste a
    Google Maps location link instead of the coordinate (in Google Maps: press and hold the spot, Share, copy the link),
-   for example `Register https://maps.app.goo.gl/AbCd123 with a 300 m radius`; short and long links work, only
+   for example `Register https://www.google.com/maps/place/Pampa/@-33.0,-56.0,14z with a 300 m radius`; short and long links work, only
    `https` Google hosts are opened (at most 5 redirects, short timeouts, no body downloaded) and a link that
    only names a place, without coordinate, is refused. Circular areas around a coordinate are the only way to
    register an area; the link is just another way to give the center.
