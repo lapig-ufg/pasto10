@@ -140,7 +140,7 @@ property_tools:
       Args:
           latitude (float): Latitude of the center point in decimal degrees (between -85 and 85).
           longitude (float): Longitude of the center point in decimal degrees (between -180 and 180).
-          radius (int): Buffer radius in meters (50 to 1000). Default: 200.
+          radius (int): Buffer radius in meters (50 to 1000). Default: 500.
 
       Returns:
           ToolResult: Confirmation image of the area and instructions for the next step.
@@ -174,7 +174,7 @@ property_tools:
 
       Args:
           url (str): The Google Maps location link exactly as sent by the user.
-          radius (int): Buffer radius in meters (50 to 1000). Default: 200.
+          radius (int): Buffer radius in meters (50 to 1000). Default: 500.
 
       Returns:
           ToolResult: Confirmation image of the area and instructions for the next step.

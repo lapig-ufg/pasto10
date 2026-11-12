@@ -130,17 +130,17 @@ def test_confirm_buffer_area_shows_summary_and_radius_choice():
     _assert_user_facing_summary(result.content, feature_id)
     assert (
         "Mention that the radius is 300 m and that they can choose another radius "
-        "between 50 and 1000 m (default: 200 m)."
+        "between 50 and 1000 m (default: 500 m)."
     ) in result.content
 
 
-def test_default_radius_is_200_and_cited_in_confirmation():
+def test_default_radius_is_500_and_cited_in_confirmation():
     run_context = _context()
 
     result = _start(run_context)
 
-    assert _metadata(run_context.session_state["candidate_properties"][0])["radius"] == 200
-    assert "200 m" in result.content
+    assert _metadata(run_context.session_state["candidate_properties"][0])["radius"] == 500
+    assert "500 m" in result.content
 
 
 @pytest.mark.parametrize("radius", [50, 1000])

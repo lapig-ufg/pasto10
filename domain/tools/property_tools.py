@@ -30,7 +30,7 @@ _COMPONENT = "property_tools"
 # Bounds of the buffer radius accepted by the buffer registration tool (meters).
 _MIN_RADIUS_METERS = 50
 _MAX_RADIUS_METERS = 1000
-_DEFAULT_RADIUS_METERS = 200
+_DEFAULT_RADIUS_METERS = 500
 
 
 def _validate_buffer_radius(radius: float, tool_key: str) -> ToolResult | None:
@@ -180,7 +180,7 @@ def start_buffer_registration_by_coordinate(
         run_context (RunContext): The run context holding ``session_state``.
         latitude (float): Latitude of the center point in decimal degrees.
         longitude (float): Longitude of the center point in decimal degrees.
-        radius (int): Buffer radius in meters (50 to 1000). Default: 200.
+        radius (int): Buffer radius in meters (50 to 1000). Default: 500.
 
     Returns:
         ToolResult: Confirmation instructions (area summary, radius and its
@@ -218,7 +218,7 @@ def start_buffer_registration_by_url(
     Args:
         run_context (RunContext): The run context holding ``session_state``.
         url (str): The Google Maps location link sent by the user.
-        radius (int): Buffer radius in meters (50 to 1000). Default: 200.
+        radius (int): Buffer radius in meters (50 to 1000). Default: 500.
 
     Returns:
         ToolResult: Confirmation instructions plus image on success;

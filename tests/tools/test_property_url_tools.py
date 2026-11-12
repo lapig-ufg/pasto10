@@ -77,13 +77,13 @@ def test_url_and_coordinate_tools_build_the_same_area():
     assert url_candidate["total_area"] == coordinate_candidate["total_area"]
 
 
-def test_default_radius_is_200():
+def test_default_radius_is_500():
     run_context = _context()
 
     _start(run_context)
 
     metadata = {entry["key"]: entry["value"] for entry in run_context.session_state["candidate_properties"][0]["metadata"]}
-    assert metadata["radius"] == 200
+    assert metadata["radius"] == 500
 
 
 @pytest.mark.parametrize("radius", [0, 49, 1001, -5])

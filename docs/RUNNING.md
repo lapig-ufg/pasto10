@@ -97,7 +97,7 @@ Health check: `curl http://localhost:8501/_stcore/health` answers `ok`.
    - `What is the rain forecast for the next weeks?`
    - `How many animal units can this area support?`
 4. To use your own area, type `Register my farm at latitude -33.0, longitude -56.0 with a 1000 m radius`
-   (radius from 50 to 1000 m, default 200 m), confirm the circle and give it a name. You can also paste a
+   (radius from 50 to 1000 m, default 500 m), confirm the circle and give it a name. You can also paste a
    Google Maps location link instead of the coordinate (in Google Maps: press and hold the spot, Share, copy the link),
    for example `Register https://www.google.com/maps/place/Pampa/@-33.0,-56.0,14z with a 300 m radius`; short and long links work, only
    `https` Google hosts are opened (at most 5 redirects, short timeouts, no body downloaded) and a link that
