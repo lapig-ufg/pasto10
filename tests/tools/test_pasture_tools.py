@@ -70,6 +70,34 @@ def test_success_reports_figures_and_keeps_state(fake_service, tool_name):
     assert run_context.session_state == before
 
 
+@pytest.mark.parametrize("tool_name", ["get_pasture_area", "generate_pasture_map"])
+@pytest.mark.parametrize("requested, used", [(1990, 2000), (2100, 2025)])
+def test_adjusted_year_is_stated_with_the_requested_one_and_the_coverage(fake_service, monkeypatch, tool_name, requested, used):
+    adjusted = STATS.model_copy(update={"year": used, "requested_year": requested})
+    monkeypatch.setattr(pasture_tools, "measure_area", lambda feature, year: adjusted)
+    monkeypatch.setattr(pasture_tools, "measure_pasture_area", lambda classification, roi: adjusted)
+    monkeypatch.setattr(pasture_tools, "pasture_coverage", lambda feature: (2000, 2025))
+
+    result = getattr(pasture_tools, tool_name)(run_context=_context("A"), year=requested)
+
+    for expected in (str(requested), str(used), "2000 to 2025", f"not for {requested}"):
+        assert expected in result.content
+
+
+@pytest.mark.parametrize("tool_name", ["get_pasture_area", "generate_pasture_map"])
+def test_a_year_served_as_asked_has_no_adjustment_note(fake_service, tool_name):
+    result = getattr(pasture_tools, tool_name)(run_context=_context("A"), year=2020)
+
+    assert "closest available year" not in result.content
+
+
+@pytest.mark.parametrize("tool_name", ["get_pasture_area", "generate_pasture_map"])
+def test_zero_year_counts_as_not_given(fake_service, tool_name):
+    getattr(pasture_tools, tool_name)(run_context=_context("A"), year=0)
+
+    assert fake_service[0][1] is None
+
+
 def test_map_image_is_attached(fake_service):
     result = pasture_tools.generate_pasture_map(run_context=_context("A"))
 

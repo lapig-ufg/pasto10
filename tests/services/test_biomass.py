@@ -117,19 +117,110 @@ def test_year_after_gpw_accumulates_the_covered_part_of_the_year(fake_ee):
     assert period.mask_year == 2022
 
 
-@pytest.mark.parametrize("year, month, kind", [(2025, 7, "month"), (None, 13, "month"), (None, 0, "month"), (1999, None, "year"), (2030, None, "year")])
-def test_unavailable_periods_never_fall_back_to_gpw(fake_ee, year, month, kind):
+@pytest.mark.parametrize("month", [13, 0, -1])
+def test_a_month_that_is_not_1_to_12_is_unavailable(fake_ee, month):
     with pytest.raises(biomass.BiomassPeriodUnavailable) as error:
-        biomass.resolve_biomass_period(year, month)
+        biomass.resolve_biomass_period(None, month)
 
-    assert error.value.kind == kind
+    assert error.value.kind == "month" and (error.value.first, error.value.last) == ("2026-06-27", "2026-08-21")
 
 
-def test_month_unavailable_reports_the_time2graze_range(fake_ee):
+@pytest.mark.parametrize("year", [1999, 1990, 1, 0, -5])
+def test_year_below_the_coverage_gives_the_oldest_year(fake_ee, year):
+    period = biomass.resolve_biomass_period(year, None)
+
+    assert period.source is BiomassSource.GPW_ANNUAL and period.label == "2000" and period.mask_year == 2000
+    assert period.requested_label == str(year) and (period.start, period.end) == (date(2000, 1, 1), date(2000, 12, 31))
+
+
+@pytest.mark.parametrize("year", [2027, 2030, 2100, 9999, 10000])
+def test_year_above_the_coverage_gives_the_latest_year(fake_ee, year):
+    period = biomass.resolve_biomass_period(year, None)
+
+    assert period.source is BiomassSource.TIME2GRAZE and period.label == "2026" and period.partial
+    assert period.requested_label == str(year) and (period.start, period.end) == T2G_RANGE
+
+
+def test_year_above_the_coverage_without_time2graze_gives_the_last_annual_year(fake_ee):
+    fake_ee["range"] = None
+
+    period = biomass.resolve_biomass_period(2100, None)
+
+    assert period.source is BiomassSource.GPW_ANNUAL and period.label == "2025" and period.requested_label == "2100"
+
+
+@pytest.mark.parametrize("year", [2000, 2010, 2025, 2026])
+def test_years_inside_the_coverage_and_its_exact_limits_are_not_adjusted(fake_ee, year):
+    assert biomass.resolve_biomass_period(year, None).requested_label is None
+
+
+@pytest.mark.parametrize("year, month", [(2020, 1), (2025, 7), (2026, 5), (1990, 12), (2000, 1)])
+def test_month_before_the_coverage_gives_the_first_covered_month(fake_ee, year, month):
+    period = biomass.resolve_biomass_period(year, month)
+
+    assert period.source is BiomassSource.TIME2GRAZE and period.label == "2026-06" and period.partial
+    assert period.requested_label == f"{year}-{month:02d}" and (period.start, period.end) == (date(2026, 6, 27), date(2026, 6, 30))
+
+
+@pytest.mark.parametrize("year, month", [(2030, 1), (2026, 9), (2026, 12), (2100, 7)])
+def test_month_after_the_coverage_gives_the_last_covered_month(fake_ee, year, month):
+    period = biomass.resolve_biomass_period(year, month)
+
+    assert period.label == "2026-08" and period.requested_label == f"{year}-{month:02d}"
+    assert (period.start, period.end) == (date(2026, 8, 1), date(2026, 8, 21))
+
+
+@pytest.mark.parametrize("month, label, adjusted", [(6, "2026-06", False), (7, "2026-07", False), (8, "2026-08", False), (9, "2026-08", True), (5, "2026-06", True)])
+def test_month_without_year_refers_to_the_latest_time2graze_year(fake_ee, month, label, adjusted):
+    period = biomass.resolve_biomass_period(None, month)
+
+    assert period.label == label and (period.requested_label is not None) is adjusted
+    if adjusted:
+        assert period.requested_label == f"2026-{month:02d}"
+
+
+def test_months_inside_the_coverage_are_not_adjusted(fake_ee):
+    assert biomass.resolve_biomass_period(2026, 7).requested_label is None
+    assert biomass.resolve_biomass_period(2026, 6).requested_label is None
+    assert biomass.resolve_biomass_period(2026, 8).requested_label is None
+
+
+def test_month_without_time2graze_data_is_unavailable_never_adjusted(fake_ee):
+    fake_ee["range"] = None
+
     with pytest.raises(biomass.BiomassPeriodUnavailable) as error:
-        biomass.resolve_biomass_period(2025, 7)
+        biomass.resolve_biomass_period(2030, 1)
 
-    assert (error.value.first, error.value.last) == ("2026-06-27", "2026-08-21")
+    assert error.value.kind == "month"
+
+
+def test_stats_carry_the_requested_period_but_the_cache_does_not(fake_ee):
+    feature = _feature()
+
+    adjusted = biomass.get_biomass_total(feature, 2100, None)
+    plain = biomass.get_biomass_total(feature, 2026, None)
+    again = biomass.get_biomass_total(feature, 2100, None)
+
+    assert adjusted.requested_label == "2100" and adjusted.period_label == "2026"
+    assert plain.requested_label is None and again.requested_label == "2100"
+    assert len(fake_ee["reduce"]) == 1
+
+
+def test_build_biomass_reports_the_requested_period_in_the_image_and_stats(fake_ee):
+    image, roi = biomass.build_biomass(_feature(), None, 1)
+    stats = biomass.measure_biomass(image, roi)
+
+    assert image.period.requested_label == "2026-01" and stats.period_label == "2026-06" and stats.requested_label == "2026-01"
+
+
+def test_coverage_describes_annual_and_time2graze_ranges(fake_ee):
+    coverage = biomass.biomass_coverage()
+    fake_ee["range"] = None
+    biomass._range_cache.clear()
+
+    assert (coverage.first_year, coverage.last_year, coverage.annual_last_year) == (2000, 2026, 2025)
+    assert (coverage.t2g_start, coverage.t2g_end) == ("2026-06-27", "2026-08-21")
+    assert biomass.biomass_coverage() == biomass.BiomassCoverage(2000, 2025, 2025, None, None)
 
 
 def test_without_time2graze_data_months_are_unavailable(fake_ee):
@@ -278,12 +369,11 @@ def test_disk_cache_skips_earth_engine(fake_ee, monkeypatch, tmp_path):
     assert second == first and len(fake_ee["reduce"]) == 1 and len(list(tmp_path.glob("*.json"))) == 1
 
 
-@pytest.mark.parametrize("year, month", [(0, 7), (-5, None), (10000, 7), (0, None)])
-def test_invalid_calendar_years_are_unavailable_not_value_errors(fake_ee, year, month):
-    with pytest.raises(biomass.BiomassPeriodUnavailable) as error:
-        biomass.resolve_biomass_period(year, month)
+@pytest.mark.parametrize("year, month", [(0, 7), (-5, None), (10000, 7), (0, None), (-5, 3)])
+def test_invalid_calendar_years_are_adjusted_not_value_errors(fake_ee, year, month):
+    period = biomass.resolve_biomass_period(year, month)
 
-    assert error.value.kind == "year"
+    assert period.requested_label is not None and period.label in {"2000", "2026-06", "2026-08"}
 
 
 def test_time2graze_end_day_is_inclusive_in_the_day_count(fake_ee):

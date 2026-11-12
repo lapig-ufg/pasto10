@@ -15,6 +15,12 @@ Source rule, applied to the whole area and never pixel by pixel:
   area, otherwise the latest annual Global Pasture Watch year. This decision needs the area, so it
   lives in ``resolve_latest_period`` and not in ``resolve_biomass_period``.
 
+A year or month outside the coverage is served with the nearest edge of it
+(the first or the latest available year or Time2Graze month) and the period
+carries what was asked (``requested_label``) so the answer can say that it
+differs. Only a month inside the Time2Graze range that has no image over the
+area (an internal gap) is still reported as unavailable.
+
 Productivity is converted to dry matter with ``DRY_MATTER_PER_GC_M2``. The
 result is the accumulated dry-matter production of the period (t DM/ha), not
 standing biomass nor available forage.
@@ -25,7 +31,7 @@ so tests can replace them without Earth Engine.
 
 import calendar
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Optional
 
@@ -107,6 +113,8 @@ class BiomassPeriod:
         scale (int): Analysis resolution in meters.
         partial (bool): True when the covered days are fewer than the requested period.
         label (str): Human-readable period (``"2022"``, ``"2026-07"``, ``"2026"``).
+        requested_label (str, optional): What the user asked for (``"2100"``, ``"2030-01"``) when it
+            differs from ``label`` because it was outside the coverage; None when served as asked.
     """
 
     source: BiomassSource
@@ -118,6 +126,7 @@ class BiomassPeriod:
     scale: int
     partial: bool
     label: str
+    requested_label: Optional[str] = None
 
     @property
     def days(self) -> int:
@@ -183,12 +192,82 @@ def _unavailable_range() -> tuple[str, str]:
     return (available[0].isoformat(), available[1].isoformat()) if available else ("none", "none")
 
 
+@dataclass(frozen=True)
+class BiomassCoverage:
+    """The periods that can be served.
+
+    Attributes:
+        first_year (int): First annual year.
+        last_year (int): Latest year served (the year of the latest Time2Graze day when later than ``annual_last_year``).
+        annual_last_year (int): Latest year of the annual Global Pasture Watch data.
+        t2g_start (str, optional): First Time2Graze day (ISO), None when it has no images.
+        t2g_end (str, optional): Last Time2Graze day (ISO), None when it has no images.
+    """
+
+    first_year: int
+    last_year: int
+    annual_last_year: int
+    t2g_start: Optional[str]
+    t2g_end: Optional[str]
+
+
+def biomass_coverage() -> BiomassCoverage:
+    """Returns the coverage used to explain an adjusted request (Time2Graze range cached for a day).
+
+    Raises:
+        EarthEngineUnavailable: If Earth Engine cannot be initialized.
+    """
+    available = t2g_date_range()
+    if available is None:
+        return BiomassCoverage(GPP_FIRST_YEAR, GPP_LAST_YEAR, GPP_LAST_YEAR, None, None)
+    return BiomassCoverage(
+        GPP_FIRST_YEAR, max(GPP_LAST_YEAR, available[1].year), GPP_LAST_YEAR, available[0].isoformat(), available[1].isoformat(),
+    )
+
+
+def _with_requested(stats: BiomassStats, requested: Optional[str]) -> BiomassStats:
+    """Returns the stats with ``requested_label`` set; the same (shared, cached) object when nothing was adjusted."""
+    return stats if requested is None else stats.model_copy(update={"requested_label": requested})
+
+
+def _flag_adjusted(period: BiomassPeriod, requested: str) -> BiomassPeriod:
+    """Returns the period with ``requested_label`` set when it differs from the requested label."""
+    return period if period.label == requested else replace(period, requested_label=requested)
+
+
+def _t2g_period(year: int, month: Optional[int], available: tuple[date, date]) -> BiomassPeriod:
+    """Returns the Time2Graze period of a year or month, cut to the covered days.
+
+    Raises:
+        BiomassPeriodUnavailable: If no day of the period is inside the Time2Graze range.
+    """
+    if month is None:
+        requested, label = (date(year, 1, 1), date(year, 12, 31)), str(year)
+    else:
+        requested, label = (date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1])), f"{year}-{month:02d}"
+    start, end = max(requested[0], available[0]), min(requested[1], available[1])
+    if start > end:
+        first, last = _unavailable_range()
+        if month is None:
+            first, last = str(GPP_FIRST_YEAR), str(max(GPP_LAST_YEAR, available[1].year))
+        raise BiomassPeriodUnavailable("year" if month is None else "month", first, last)
+    return BiomassPeriod(
+        BiomassSource.TIME2GRAZE, year, month, start, end, min(year, MASK_LAST_YEAR),
+        T2G_SCALE_METERS, (start, end) != requested, label,
+    )
+
+
 def resolve_biomass_period(year: Optional[int], month: Optional[int]) -> BiomassPeriod:
-    """Applies the source rule to an explicit year and/or month.
+    """Applies the source rule to an explicit year and/or month, clamping it to the coverage.
 
     With neither a year nor a month it returns the latest annual year
     (``GPP_LAST_YEAR``); the "latest data available" choice that prefers
-    Time2Graze is ``resolve_latest_period``.
+    Time2Graze is ``resolve_latest_period``. A year before ``GPP_FIRST_YEAR``
+    gives that first year and a year after the latest one gives the latest
+    year; a month before the first (after the last) Time2Graze month gives the
+    first (last) one, whatever the year asked. A month without year refers to
+    the year of the latest Time2Graze day. When the period differs from the
+    request, ``requested_label`` holds what was asked.
 
     Args:
         year (int | None): Requested year.
@@ -198,40 +277,26 @@ def resolve_biomass_period(year: Optional[int], month: Optional[int]) -> Biomass
         BiomassPeriod: The period, its source, mask year and covered days.
 
     Raises:
-        BiomassPeriodUnavailable: If the year is before ``GPP_FIRST_YEAR`` (or not
-        a valid calendar year), or
-        the month/year has no Time2Graze coverage (``kind`` tells which).
+        BiomassPeriodUnavailable: If the month is not 1-12 or Time2Graze has no
+        images at all (``kind`` ``"month"``), or a Time2Graze year has no covered day.
         EarthEngineUnavailable: If Earth Engine cannot be initialized.
     """
-    if year is not None and not 1 <= year <= 9999:
-        raise BiomassPeriodUnavailable("year", str(GPP_FIRST_YEAR), str(GPP_LAST_YEAR))
-    if month is None and (year is None or GPP_FIRST_YEAR <= year <= GPP_LAST_YEAR):
-        return _annual_period(GPP_LAST_YEAR if year is None else year)
+    if month is not None and not 1 <= month <= 12:
+        raise BiomassPeriodUnavailable("month", *_unavailable_range())
+    if year is None and month is None:
+        return _annual_period(GPP_LAST_YEAR)
     available = t2g_date_range()
     if month is None:
         latest = max(GPP_LAST_YEAR, available[1].year if available else GPP_LAST_YEAR)
-        if year < GPP_FIRST_YEAR or available is None:
-            raise BiomassPeriodUnavailable("year", str(GPP_FIRST_YEAR), str(latest))
-        requested = (date(year, 1, 1), date(year, 12, 31))
-        label = str(year)
-        kind = "year"
-    else:
-        if available is None or not 1 <= month <= 12:
-            raise BiomassPeriodUnavailable("month", *_unavailable_range())
-        year = year if year is not None else available[1].year
-        requested = (date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1]))
-        label = f"{year}-{month:02d}"
-        kind = "month"
-    start, end = max(requested[0], available[0]), min(requested[1], available[1])
-    if start > end:
-        first, last = _unavailable_range()
-        if kind == "year":
-            first, last = str(GPP_FIRST_YEAR), str(max(GPP_LAST_YEAR, available[1].year))
-        raise BiomassPeriodUnavailable(kind, first, last)
-    return BiomassPeriod(
-        BiomassSource.TIME2GRAZE, year, month, start, end, min(year, MASK_LAST_YEAR),
-        T2G_SCALE_METERS, (start, end) != requested, label,
-    )
+        target = min(max(year, GPP_FIRST_YEAR), latest)
+        period = _annual_period(target) if target <= GPP_LAST_YEAR else _t2g_period(target, None, available)
+        return _flag_adjusted(period, str(year))
+    if available is None:
+        raise BiomassPeriodUnavailable("month", *_unavailable_range())
+    asked = year if year is not None else available[1].year
+    first, last = (available[0].year, available[0].month), (available[1].year, available[1].month)
+    target_year, target_month = min(max((asked, month), first), last)
+    return _flag_adjusted(_t2g_period(target_year, target_month, available), f"{asked}-{month:02d}")
 
 
 def _annual_period(year: int) -> BiomassPeriod:
@@ -459,7 +524,8 @@ def measure_biomass(biomass: BiomassImage, roi: "ee.Geometry") -> BiomassStats:
         roi (ee.Geometry): Area of interest.
 
     Returns:
-        BiomassStats: Mean (area-weighted) and total figures, rounded to 2 decimals.
+        BiomassStats: Mean (area-weighted) and total figures, rounded to 2 decimals;
+        ``requested_label`` is stamped from the period (the cached figures never carry it).
 
     Raises:
         NoPastureBiomass: If less than ``MIN_PASTURE_FRACTION`` of the area is productive pasture.
@@ -487,11 +553,12 @@ def measure_biomass(biomass: BiomassImage, roi: "ee.Geometry") -> BiomassStats:
             n_images=biomass.n_images, days_covered=period.days, data_coverage=coverage,
         )
 
-    return _stats_cache.get_or_compute(
+    stats = _stats_cache.get_or_compute(
         biomass.key, compute,
         load=lambda: _load_stats(biomass.key),
         store=lambda stats: _disk_cache().store(biomass.key, stats.model_dump(mode="json")),
     )
+    return _with_requested(stats, period.requested_label)
 
 
 def get_biomass_total(feature: Feature, year: Optional[int] = None, month: Optional[int] = None) -> BiomassStats:
@@ -502,16 +569,17 @@ def get_biomass_total(feature: Feature, year: Optional[int] = None, month: Optio
 
     Args:
         feature (Feature): Registered area.
-        year (int | None): Requested year.
-        month (int | None): Requested month (1-12), served by Time2Graze. Without
+        year (int | None): Requested year; outside the coverage it is clamped to the first or latest year.
+        month (int | None): Requested month (1-12), served by Time2Graze; outside the
+            coverage it is clamped to the first or last month. Without
             year and month the most recent data available for the area is used.
 
     Returns:
-        BiomassStats: The measured figures.
+        BiomassStats: The measured figures; ``requested_label`` is set when the period was adjusted.
 
     Raises:
         EarthEngineUnavailable: If Earth Engine cannot be initialized.
-        BiomassPeriodUnavailable: If the period has no data.
+        BiomassPeriodUnavailable: If a month inside the coverage has no images over the area.
         NoPastureBiomass: If the area has no productive pasture.
         Exception: Any Earth Engine computation error.
     """
@@ -520,7 +588,7 @@ def get_biomass_total(feature: Feature, year: Optional[int] = None, month: Optio
     key = _stats_key(pasture.geometry_key(feature), period)
     cached = _stats_cache.peek(key) or _load_stats(key)
     if cached is not None:
-        return cached
+        return _with_requested(cached, period.requested_label)
     biomass, roi = build_biomass(feature, year, month)
     return measure_biomass(biomass, roi)
 

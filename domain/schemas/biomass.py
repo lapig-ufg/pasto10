@@ -73,6 +73,12 @@ class BiomassStats(BaseModel):
         examples=[0.19],
     )
 
+    requested_label: Optional[str] = Field(
+        default=None,
+        description="Year or month the user asked for when it is outside the coverage and `period_label` was used instead; None when served as asked.",
+        examples=["2100"],
+    )
+
     @property
     def pasture_percent(self) -> float:
         """Share of the analyzed area that is productive pasture, in percent (0 when the area is empty)."""
