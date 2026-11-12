@@ -52,8 +52,7 @@ def _register_clicked(item: dict) -> None:
     if result is None:
         st.session_state[_MESSAGE_KEY] = (item["id"], "info", f"'{item['name']}' is already registered in this session.")
         return
-    tail = "synthetic demo parcel." if result["demo"] else "no registry parcel here, using an approximate circle."
-    text = f"Registered {result['name']} ({result['area_ha']:,.1f} ha) - {tail}"
+    text = f"Registered {result['name']} ({result['area_ha']:,.1f} ha) - {item['radius_m']} m circular area."
     st.toast(text)
     st.session_state[_MESSAGE_KEY] = (item["id"], "success", text + " Ask for its pasture map or biomass.")
 
