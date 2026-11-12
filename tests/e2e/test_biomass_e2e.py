@@ -5,7 +5,7 @@ runs the chat flow (register, then measure and map the registered area) with
 the default (the most recent data available for the area), the latest annual year, an old year and a Time2Graze
 month, checks plausibility (mean between 0 and 25 t DM/ha, total about
 mean x pasture hectares (within the rounding of the mean)), that unavailable Time2Graze months are reported
-without crashing or falling back, that the negative controls have no
+without crashing, that requests outside the coverage give the nearest available period and say so, that the negative controls have no
 pasture, and prints a summary table. Run with ``uv run pytest -m e2e -s``;
 set ``PASTO10_E2E_OUT`` to keep the maps.
 """
@@ -144,12 +144,23 @@ def test_biomass_tools_over_global_properties(item):
     )
 
 
-def test_requests_that_cannot_be_served_never_fall_back_to_another_source():
+def test_requests_outside_the_coverage_serve_the_nearest_available_period_and_say_so():
     context = _register(PROPERTIES[0])
+    last_year = biomass.biomass_coverage().last_year
 
-    for kwargs, key in (({"year": 1990}, "from 2000 to 2025"), ({"year": 2025, "month": 7}, "no Time2Graze data"), ({"year": 0, "month": 7}, "from 2000 to 2025")):
+    for kwargs, effective, requested in (
+        ({"year": 1990}, "period 2000 ", "1990"), ({"year": 2100}, f"period {last_year} ", "2100"), ({"year": -5}, "period 2000 ", "-5"),
+    ):
         result = biomass_tools.get_biomass_total(run_context=context, **kwargs)
-        assert key in result.content and "Mean:" not in result.content
+        assert effective in result.content and f"asked for {requested}" in result.content and f"not for {requested}" in result.content
+
+
+def test_zero_year_is_not_given_so_a_month_alone_refers_to_the_latest_time2graze_year():
+    latest = biomass.t2g_date_range()[1]
+
+    result = biomass_tools.get_biomass_total(run_context=_register(PROPERTIES[0]), year=0, month=latest.month)
+
+    assert f"period {latest.year}-{latest.month:02d} " in result.content and "outside the available coverage" not in result.content
 
 
 def test_partial_year_from_time2graze_is_reported_as_partial():

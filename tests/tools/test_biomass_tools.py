@@ -242,6 +242,41 @@ def test_explicit_periods_have_no_latest_note(fake_service, tool_name, kwargs):
     assert "gave no period" not in content
 
 
+ADJUSTED = MONTHLY.model_copy(update={"requested_label": "2030-01"})
+
+
+class _Coverage:
+    first_year, last_year, annual_last_year, t2g_start, t2g_end = 2000, 2026, 2025, "2026-06-27", "2026-08-21"
+
+
+@pytest.mark.parametrize("tool_name", BOTH)
+def test_adjusted_period_is_stated_with_the_requested_one_and_the_coverage(fake_service, monkeypatch, tool_name):
+    _, stats = fake_service
+    stats["value"] = ADJUSTED
+    monkeypatch.setattr(biomass_tools, "biomass_coverage", lambda: _Coverage)
+
+    result = getattr(biomass_tools, tool_name)(run_context=_context("A"), year=2030, month=1)
+
+    for expected in ("2030-01", "2026-07", "2000 to 2025", "2026-06-27 to 2026-08-21", "not for 2030-01"):
+        assert expected in result.content
+
+
+@pytest.mark.parametrize("tool_name", BOTH)
+def test_a_request_served_as_asked_has_no_adjustment_note(fake_service, tool_name):
+    result = getattr(biomass_tools, tool_name)(run_context=_context("A"), year=2025)
+
+    assert "outside the available coverage" not in result.content
+
+
+def test_every_adjustment_note_exists_for_both_tools():
+    for tool_name in BOTH:
+        text = get_tool_result_text(
+            "biomass_tools", tool_name, "note_period_adjusted", requested="2100", period="2026", source="s",
+            first_year=2000, annual_last_year=2025, t2g_start="a", t2g_end="b",
+        )
+        assert "2100" in text and "2026" in text
+
+
 @pytest.mark.parametrize("tool_name", BOTH)
 def test_zero_year_and_month_count_as_not_given(fake_service, tool_name):
     content = getattr(biomass_tools, tool_name)(run_context=_context("A"), year=0, month=0).content

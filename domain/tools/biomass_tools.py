@@ -21,8 +21,10 @@ from domain.schemas.feature import Feature
 from domain.services.geospatial.biomass import (
     GPP_FIRST_YEAR,
     GPP_LAST_YEAR,
+    MAX_ANNUAL_FRAMES,
     BiomassPeriodUnavailable,
     NoPastureBiomass,
+    biomass_coverage,
     build_biomass,
     get_biomass_total as measure_total,
     measure_biomass,
@@ -50,7 +52,8 @@ def _success_text(tool_key: str, feature: Feature, stats: BiomassStats, latest: 
     ``note_mask_year`` when the pasture mask is older than the period,
     ``note_time2graze`` when the source is Time2Graze (short, partial coverage)
     and ``note_partial_year`` when a whole year was requested but only part of
-    it is covered.
+    it is covered. ``note_period_adjusted`` goes first when ``stats.requested_label`` is set (the year or
+    month asked was outside the coverage): it gives the requested period, the period used and the coverage.
     """
     text = get_tool_result_text(
         _COMPONENT, tool_key, "success",
@@ -60,6 +63,13 @@ def _success_text(tool_key: str, feature: Feature, stats: BiomassStats, latest: 
         pasture_percent=stats.pasture_percent, scale_m=stats.scale_m,
     )
     notes = area_notes(_COMPONENT, tool_key, feature, stats.area_ha)
+    if stats.requested_label is not None:
+        coverage = biomass_coverage()
+        notes.insert(0, get_tool_result_text(
+            _COMPONENT, tool_key, "note_period_adjusted", requested=stats.requested_label, period=stats.period_label,
+            source=stats.source.value, first_year=coverage.first_year, annual_last_year=coverage.annual_last_year,
+            t2g_start=coverage.t2g_start or "none", t2g_end=coverage.t2g_end or "none",
+        ))
     if latest:
         key = "note_latest" if stats.source is BiomassSource.TIME2GRAZE else "note_latest_annual"
         notes.append(get_tool_result_text(_COMPONENT, tool_key, key, period=stats.period_label, source=stats.source.value))
@@ -119,8 +129,10 @@ def generate_biomass_map(
     Args:
         run_context (RunContext): The run context holding ``session_state`` (read only).
         area_name (str, optional): Name of the registered area; the latest registered area when omitted.
-        year (int, optional): Reference year; with no year and no month, the most recent data available for the area.
-        month (int, optional): Month (1-12) of recent Time2Graze data.
+        year (int, optional): Reference year; with no year and no month, the most recent data available for the area
+            (0 counts as omitted). A year outside the coverage is replaced by the first or latest available year.
+        month (int, optional): Month (1-12) of recent Time2Graze data; outside the Time2Graze range it is replaced
+            by its first or last month. The result says when the period differs from the request.
 
     Returns:
         ToolResult: The ``success`` text (period, source, mean and total) plus
@@ -157,8 +169,10 @@ def get_biomass_total(
     Args:
         run_context (RunContext): The run context holding ``session_state`` (read only).
         area_name (str, optional): Name of the registered area; the latest registered area when omitted.
-        year (int, optional): Reference year; with no year and no month, the most recent data available for the area.
-        month (int, optional): Month (1-12) of recent Time2Graze data.
+        year (int, optional): Reference year; with no year and no month, the most recent data available for the area
+            (0 counts as omitted). A year outside the coverage is replaced by the first or latest available year.
+        month (int, optional): Month (1-12) of recent Time2Graze data; outside the Time2Graze range it is replaced
+            by its first or last month. The result says when the period differs from the request.
 
     Returns:
         ToolResult: The ``success`` text (period, source, mean t DM/ha and total
@@ -194,7 +208,8 @@ def generate_biomass_video(run_context: RunContext, area_name: Optional[str] = N
     Args:
         run_context (RunContext): The run context holding ``session_state`` (read only).
         area_name (str, optional): Name of the registered area; the latest registered area when omitted.
-        years (int, optional): Number of annual frames for the fallback (2 to 12, default 10).
+        years (int, optional): Number of annual frames for the fallback (2 to 12, default 10); a value outside
+            that range is adjusted and the result says so.
 
     Returns:
         ToolResult: ``success_monthly`` or ``success_annual_fallback`` (mode, frames,
@@ -220,6 +235,11 @@ def generate_biomass_video(run_context: RunContext, area_name: Optional[str] = N
             labels=", ".join(video.frames), vmin=video.vmin, vmax=video.vmax, duration=video.duration,
             reason_text=get_tool_result_text(_COMPONENT, tool_key, f"fallback_reason_{video.reason}") if video.mode != "monthly" else "",
         )
+        if years and video.mode != "monthly" and not 2 <= years <= MAX_ANNUAL_FRAMES:
+            content = with_note(content, get_tool_result_text(
+                _COMPONENT, tool_key, "note_years_adjusted", requested=years, used=len(video.frames),
+                min_years=2, max_years=MAX_ANNUAL_FRAMES,
+            ))
         media = Video(
             content=video.content, format=video.format, mime_type=video.mime_type, duration=video.duration,
             width=video.width, height=video.height, fps=video.fps,

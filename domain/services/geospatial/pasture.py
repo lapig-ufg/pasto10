@@ -11,6 +11,11 @@ yield an image with a single band ``cls``:
 
 The ``ee`` coupling is confined to the small ``_``-prefixed functions below,
 so tests can replace them without Earth Engine.
+
+A year outside the coverage is not an error: a year before ``GPW_FIRST_YEAR``
+is served with ``GPW_FIRST_YEAR`` and a year after the latest year that can be
+analyzed with that latest year; the result carries the requested year
+(``requested_year``) so the answer can say that it differs.
 """
 
 import hashlib
@@ -66,7 +71,7 @@ _latest_year_cache = SingleFlightCache(_STATS_CACHE_SIZE, ttl=_LATEST_YEAR_TTL_S
 
 
 class YearUnavailable(Exception):
-    """The requested year has no pasture data for the area.
+    """The Global Pasture Watch collection has no image for a year inside its nominal coverage.
 
     Attributes:
         latest (int): Most recent year that can be analyzed for the area.
@@ -92,6 +97,7 @@ class PastureClassification:
         source (PastureSource): Dataset behind the classes.
         scale (int): Analysis scale in meters.
         key (tuple): Stats cache key (geometry hash, year, source, method version).
+        requested_year (int, optional): Year the user asked for when it was adjusted to ``year``; None otherwise.
     """
 
     image: "ee.Image"
@@ -99,6 +105,7 @@ class PastureClassification:
     source: PastureSource
     scale: int
     key: tuple
+    requested_year: Optional[int] = None
 
 
 def feature_geometry(feature: Feature) -> "ee.Geometry":
@@ -274,13 +281,28 @@ def _to_hectares(square_meters: float) -> float:
     return round(square_meters / _SQUARE_METERS_PER_HECTARE, 2)
 
 
+def latest_year(roi: "ee.Geometry", geometry_key: Optional[str] = None) -> int:
+    """Returns the latest year that can be analyzed over the area.
+
+    Args:
+        roi (ee.Geometry): Area of interest.
+        geometry_key (str, optional): Geometry hash; lets the lookup be cached for an hour.
+
+    Returns:
+        int: The latest year with a Satellite Embedding image over the area, never before ``GPW_LAST_YEAR``.
+    """
+    return max(_cached_latest_embedding_year(roi, geometry_key), GPW_LAST_YEAR)
+
+
 def resolve_year(roi: "ee.Geometry", year: Optional[int], geometry_key: Optional[str] = None) -> int:
-    """Validates the requested year; without one, picks ``GPW_LAST_YEAR``.
+    """Maps the requested year to the year that is analyzed, clamping it to the coverage.
 
     Years from ``GPW_FIRST_YEAR`` to ``GPW_LAST_YEAR`` are always available
     (published Global Pasture Watch maps). Later years are on-the-fly
     estimates and need a Satellite Embedding image over the area, so they must
-    be requested explicitly: the default is never an estimate.
+    be requested explicitly: the default is never an estimate. A year before
+    ``GPW_FIRST_YEAR`` gives ``GPW_FIRST_YEAR`` and a year after the latest
+    available one gives that latest year.
 
     Args:
         roi (ee.Geometry): Area of interest.
@@ -289,20 +311,40 @@ def resolve_year(roi: "ee.Geometry", year: Optional[int], geometry_key: Optional
             latest embedding year be cached for an hour.
 
     Returns:
-        int: The year to analyze.
-
-    Raises:
-        YearUnavailable: If the year is before ``GPW_FIRST_YEAR`` or after the
-        latest year with an embedding (``latest`` carries that year).
+        int: The year to analyze (equal to ``year`` when it is inside the coverage).
     """
     if year is None:
         return GPW_LAST_YEAR
-    if GPW_FIRST_YEAR <= year <= GPW_LAST_YEAR:
+    if year < GPW_FIRST_YEAR:
+        return GPW_FIRST_YEAR
+    if year <= GPW_LAST_YEAR:
         return year
-    latest = max(_cached_latest_embedding_year(roi, geometry_key), GPW_LAST_YEAR)
-    if year < GPW_FIRST_YEAR or year > latest:
-        raise YearUnavailable(latest=latest)
-    return year
+    return min(year, latest_year(roi, geometry_key))
+
+
+def adjusted_year(requested: Optional[int], resolved: int) -> Optional[int]:
+    """Returns the requested year when it differs from the analyzed one, else None."""
+    return requested if requested is not None and requested != resolved else None
+
+
+def _with_requested(stats: PastureAreaStats, requested: Optional[int]) -> PastureAreaStats:
+    """Returns the stats with ``requested_year`` set; the same (shared, cached) object when nothing was adjusted."""
+    return stats if requested is None else stats.model_copy(update={"requested_year": requested})
+
+
+def pasture_coverage(feature: Feature) -> tuple[int, int]:
+    """Returns the first and the latest year that can be analyzed over an area.
+
+    Args:
+        feature (Feature): Registered area.
+
+    Returns:
+        tuple[int, int]: (``GPW_FIRST_YEAR``, latest year; cached for an hour).
+
+    Raises:
+        EarthEngineUnavailable: If Earth Engine cannot be initialized.
+    """
+    return GPW_FIRST_YEAR, latest_year(feature_geometry(feature), geometry_key(feature))
 
 
 def geometry_key(feature: Feature) -> str:
@@ -324,15 +366,17 @@ def _stats_key(geometry_key: str, year: int) -> tuple:
     return (geometry_key, year, _source_for(year), METHOD_VERSION)
 
 
-def _build_classification(feature: Feature, roi: "ee.Geometry", year: int) -> PastureClassification:
-    """Builds the class image of an already validated year (trains the forest when needed)."""
+def _build_classification(
+    feature: Feature, roi: "ee.Geometry", year: int, requested_year: Optional[int] = None,
+) -> PastureClassification:
+    """Builds the class image of an already resolved year (trains the forest when needed)."""
     geom_key = geometry_key(feature)
     source = _source_for(year)
     if source is PastureSource.GPW:
         image, scale = _gpw_image(year), GPW_SCALE_METERS
     else:
         image, scale = _predicted_image(roi, year, geom_key), CLASSIFICATION_SCALE_METERS
-    return PastureClassification(image, year, source, scale, _stats_key(geom_key, year))
+    return PastureClassification(image, year, source, scale, _stats_key(geom_key, year), requested_year)
 
 
 def classify_pasture(feature: Feature, year: Optional[int] = None) -> tuple[PastureClassification, "ee.Geometry"]:
@@ -340,18 +384,21 @@ def classify_pasture(feature: Feature, year: Optional[int] = None) -> tuple[Past
 
     Args:
         feature (Feature): Registered area.
-        year (int | None): Reference year; None selects ``GPW_LAST_YEAR``.
+        year (int | None): Reference year; None selects ``GPW_LAST_YEAR``. A year
+            outside the coverage is clamped (see ``resolve_year``).
 
     Returns:
         tuple: (PastureClassification, the area as ee.Geometry). For years
         after ``GPW_LAST_YEAR`` the area's forest is trained here the first time.
+        ``requested_year`` is set when the year was adjusted.
 
     Raises:
         EarthEngineUnavailable: If Earth Engine cannot be initialized.
-        YearUnavailable: If the year has no data (see ``resolve_year``).
+        YearUnavailable: If the collection lacks an image for a year inside its coverage.
     """
     roi = feature_geometry(feature)
-    classification = _build_classification(feature, roi, resolve_year(roi, year, geometry_key(feature)))
+    resolved = resolve_year(roi, year, geometry_key(feature))
+    classification = _build_classification(feature, roi, resolved, adjusted_year(year, resolved))
     log_debug(f"classify_pasture: year={classification.year}, source={classification.source.name}")
     return classification, roi
 
@@ -390,7 +437,8 @@ def measure_pasture_area(classification: PastureClassification, roi: "ee.Geometr
 
     Returns:
         PastureAreaStats: Hectares rounded to 2 decimals; ``pasture_ha`` is
-        the sum of the two grassland classes.
+        the sum of the two grassland classes. ``requested_year`` is stamped
+        from the classification (the cached figures never carry it).
 
     Raises:
         Exception: Any Earth Engine error (computation, quota, network).
@@ -412,12 +460,13 @@ def measure_pasture_area(classification: PastureClassification, roi: "ee.Geometr
             area_ha=_to_hectares(sum(square_meters.values())),
         )
 
-    return _stats_cache.get_or_compute(
+    stats = _stats_cache.get_or_compute(
         classification.key,
         compute,
         load=lambda: _load_stats(classification.key),
         store=lambda stats: _disk_cache().store(classification.key, stats.model_dump(mode="json")),
     )
+    return _with_requested(stats, classification.requested_year)
 
 
 def get_pasture_area(feature: Feature, year: Optional[int] = None) -> PastureAreaStats:
@@ -432,20 +481,22 @@ def get_pasture_area(feature: Feature, year: Optional[int] = None) -> PastureAre
     Args:
         feature (Feature): Registered area.
         year (int | None): Reference year; None selects ``GPW_LAST_YEAR``
-            (the latest published Global Pasture Watch map).
+            (the latest published Global Pasture Watch map). A year outside the
+            coverage is clamped to the first or latest year.
 
     Returns:
-        PastureAreaStats: The measured areas.
+        PastureAreaStats: The measured areas; ``requested_year`` is set when the year was adjusted.
 
     Raises:
         EarthEngineUnavailable: If Earth Engine cannot be initialized.
-        YearUnavailable: If the year has no data.
+        YearUnavailable: If the collection lacks an image for a year inside its coverage.
         Exception: Any Earth Engine computation error.
     """
     roi = feature_geometry(feature)
     geom_key = geometry_key(feature)
     resolved = resolve_year(roi, year, geom_key)
+    requested = adjusted_year(year, resolved)
     cached = _stats_cache.peek(_stats_key(geom_key, resolved)) or _load_stats(_stats_key(geom_key, resolved))
     if cached is not None:
-        return cached
-    return measure_pasture_area(_build_classification(feature, roi, resolved), roi)
+        return _with_requested(cached, requested)
+    return measure_pasture_area(_build_classification(feature, roi, resolved, requested), roi)

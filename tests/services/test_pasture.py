@@ -78,12 +78,51 @@ def test_no_year_defaults_to_last_gpw_year_without_classification(fake_ee):
     assert calls["latest"] == 0 and calls["rf"] == []
 
 
-@pytest.mark.parametrize("year", [1999, 2026, 3000])
-def test_unavailable_year_reports_latest(fake_ee, year):
-    with pytest.raises(pasture.YearUnavailable) as error:
-        pasture.classify_pasture(_feature(), year)
+@pytest.mark.parametrize("year", [1999, 1990, 1, -5])
+def test_year_below_the_coverage_gives_the_first_year(fake_ee, year):
+    calls, _ = fake_ee
 
-    assert error.value.latest == 2025
+    classification, _roi = pasture.classify_pasture(_feature(), year)
+
+    assert classification.year == 2000 and classification.requested_year == year
+    assert classification.source is PastureSource.GPW and calls["gpw"] == [2000] and calls["latest"] == 0
+
+
+@pytest.mark.parametrize("year", [2026, 3000, 2100])
+def test_year_above_the_coverage_gives_the_latest_year(fake_ee, year):
+    calls, _ = fake_ee
+
+    classification, _roi = pasture.classify_pasture(_feature(), year)
+
+    assert classification.year == 2025 and classification.requested_year == year
+    assert classification.source is PastureSource.CLASSIFICATION and calls["rf"] == [2025]
+
+
+def test_latest_year_follows_the_embedding_coverage_of_the_area(fake_ee):
+    _, state = fake_ee
+    state["latest"] = 2024
+
+    assert pasture.classify_pasture(_feature(), 2100)[0].year == 2024
+    assert pasture.pasture_coverage(_feature()) == (2000, 2024)
+
+
+@pytest.mark.parametrize("year", [2000, 2022, 2023, 2025, None])
+def test_years_inside_the_coverage_and_its_exact_limits_are_not_adjusted(fake_ee, year):
+    classification, _roi = pasture.classify_pasture(_feature(), year)
+
+    assert classification.requested_year is None and classification.year == (year or 2022)
+
+
+def test_adjusted_year_is_stamped_on_stats_but_never_cached(fake_ee):
+    calls, _ = fake_ee
+    feature = _feature()
+
+    adjusted = pasture.get_pasture_area(feature, 2100)
+    exact = pasture.get_pasture_area(feature, 2025)
+    first = pasture.get_pasture_area(feature, 1990)
+
+    assert adjusted.requested_year == 2100 and adjusted.year == 2025 and exact.requested_year is None
+    assert first.requested_year == 1990 and first.year == 2000 and len(calls["area"]) == 2
 
 
 def test_measure_converts_to_hectares_and_sums_classes(fake_ee):

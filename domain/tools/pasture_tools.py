@@ -4,7 +4,8 @@ Both tools are read-only with respect to ``session_state``: they look up a
 registered area (by name, or the latest one), delegate the Earth Engine work
 to ``domain/services/geospatial/pasture.py`` and return texts from
 ``domain/prompts/tools.yml``. Known failures (unknown area, nothing
-registered, year without data, Earth Engine unavailable) get dedicated texts;
+registered, Earth Engine unavailable) get dedicated texts; a year outside the coverage is served
+with the first or latest year and the success text carries ``note_year_adjusted``;
 anything else is logged in full and the model only gets a generic message.
 """
 
@@ -24,6 +25,7 @@ from domain.services.geospatial.pasture import (
     classify_pasture,
     get_pasture_area as measure_area,
     measure_pasture_area,
+    pasture_coverage,
 )
 from domain.services.geospatial.pasture_image import render_pasture_map
 from domain.utils.tool_utils import area_label, area_notes, latest_area_note, lookup_area, unexpected_error, with_note
@@ -32,14 +34,25 @@ _COMPONENT = "pasture_tools"
 
 
 def _success_text(tool_key: str, feature: Feature, stats: PastureAreaStats) -> str:
-    """Renders the ``success`` text with the measured figures of an area (hectares with one decimal) and its area notes."""
+    """Renders the ``success`` text with the measured figures of an area (hectares with one decimal) and its notes.
+
+    When ``stats.requested_year`` is set (the year asked was outside the coverage) ``note_year_adjusted`` states
+    the requested year, the year used and the coverage of the area (first to latest year).
+    """
     text = get_tool_result_text(
         _COMPONENT, tool_key, "success",
         area_name=area_label(feature), year=stats.year, source=stats.source.value,
         pasture_ha=f"{stats.pasture_ha:.1f}", cultivated_ha=f"{stats.cultivated_ha:.1f}", natural_ha=f"{stats.natural_ha:.1f}",
         area_ha=f"{stats.area_ha:.1f}", pasture_percent=stats.pasture_percent,
     )
-    return "\n".join([text, *area_notes(_COMPONENT, tool_key, feature, stats.area_ha)])
+    notes = area_notes(_COMPONENT, tool_key, feature, stats.area_ha)
+    if stats.requested_year is not None:
+        first, latest = pasture_coverage(feature)
+        notes.insert(0, get_tool_result_text(
+            _COMPONENT, tool_key, "note_year_adjusted", requested_year=stats.requested_year, year=stats.year,
+            first_year=first, latest_year=latest,
+        ))
+    return "\n".join([text, *notes])
 
 
 def _handle_known_errors(error: Exception, tool_key: str) -> ToolResult:
@@ -50,7 +63,7 @@ def _handle_known_errors(error: Exception, tool_key: str) -> ToolResult:
         tool_key (str): Tool name whose ``results`` texts are rendered.
 
     Returns:
-        ToolResult: ``year_unavailable`` (with the earliest/latest years),
+        ToolResult: ``year_unavailable`` (a year inside the coverage without an image),
         ``earth_engine_unavailable`` or the generic ``error`` text.
     """
     if isinstance(error, YearUnavailable):
@@ -71,7 +84,9 @@ def generate_pasture_map(run_context: RunContext, area_name: Optional[str] = Non
     Args:
         run_context (RunContext): The run context holding ``session_state`` (read only).
         area_name (str, optional): Name of the registered area; the latest registered area when omitted.
-        year (int, optional): Reference year; 2022, the latest Global Pasture Watch map, when omitted. Later years are experimental estimates.
+        year (int, optional): Reference year; 2022, the latest Global Pasture Watch map, when omitted (0 counts
+            as omitted). Later years are experimental estimates; a year outside the coverage is replaced by the
+            first or latest available year and the result says so.
 
     Returns:
         ToolResult: The ``success`` text (year, source, areas) plus the map
@@ -82,6 +97,7 @@ def generate_pasture_map(run_context: RunContext, area_name: Optional[str] = Non
     Side effects:
         None on ``session_state``. Queries Earth Engine and downloads tiles.
     """
+    year = year or None
     tool_key = "generate_pasture_map"
     log_debug(f"{tool_key}: area_name={area_name!r}, year={year}")
     try:
@@ -104,7 +120,9 @@ def get_pasture_area(run_context: RunContext, area_name: Optional[str] = None, y
     Args:
         run_context (RunContext): The run context holding ``session_state`` (read only).
         area_name (str, optional): Name of the registered area; the latest registered area when omitted.
-        year (int, optional): Reference year; 2022, the latest Global Pasture Watch map, when omitted. Later years are experimental estimates.
+        year (int, optional): Reference year; 2022, the latest Global Pasture Watch map, when omitted (0 counts
+            as omitted). Later years are experimental estimates; a year outside the coverage is replaced by the
+            first or latest available year and the result says so.
 
     Returns:
         ToolResult: The ``success`` text (year, source, cultivated, natural and
@@ -115,6 +133,7 @@ def get_pasture_area(run_context: RunContext, area_name: Optional[str] = None, y
     Side effects:
         None on ``session_state``. Queries Earth Engine.
     """
+    year = year or None
     tool_key = "get_pasture_area"
     log_debug(f"{tool_key}: area_name={area_name!r}, year={year}")
     try:
