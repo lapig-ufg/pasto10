@@ -265,10 +265,10 @@ def test_cancel_registration_resets_state_without_touching_registrations():
 
 
 def test_geometry_failure_returns_generic_error_and_keeps_state(monkeypatch, caplog):
-    def broken(*args, **kwargs):
+    def broken(**kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(property_tools, "candidate_to_feature", broken)
+    monkeypatch.setattr(property_tools, "build_buffered_area", broken)
     run_context = _context()
 
     with caplog.at_level("ERROR"):

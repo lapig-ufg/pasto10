@@ -31,6 +31,7 @@ _set_page_config = st.set_page_config
 _HIDDEN_BUTTONS: set[str] = set()
 _MEDIA_TYPES = {"png", "jpg", "jpeg", "webp", "wav", "mp3", "mp4"}
 
+# The Portuguese upload key is the exact label of Semente 0.4.1 (lookup key only; the output is English).
 LABELS = {
     "Login": "Sign in",
     "Log In": "Sign in",

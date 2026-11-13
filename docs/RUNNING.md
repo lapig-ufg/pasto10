@@ -101,7 +101,10 @@ Health check: `curl http://localhost:8501/_stcore/health` answers `ok`.
   reads only `GOOGLE_API_KEY` and `GEE_*`), so keep database, S3 and WhatsApp variables out of that file.
   `GEE_KEY_FILE` must be a path that exists **inside** the container (the key is not copied into the image):
   place the key file in a folder mounted into `/app` or add a volume for it.
-- Docker does not set `DATABASE_TYPE`; the default is SQLite inside the container.
+- Neither `Dockerfile` nor `compose.yaml` sets `DATABASE_TYPE`; it comes from the `.env` loaded by compose
+  (`.env.example` has `sqlite`) and, if absent, Semente defaults to SQLite, inside the container.
+- The manifest is found from the working directory (`/app`, where `semente.yaml` lives) because
+  `SEMENTE_MANIFEST` is not set (`scripts/run_local.sh` sets it explicitly).
 
 ## 6. Try it in the browser
 
