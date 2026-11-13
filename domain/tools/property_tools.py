@@ -16,10 +16,12 @@ from typing import Optional
 from semente import Context as RunContext
 from semente import Image, ToolResult, tool
 from semente.logging import log_debug, log_warning
+from semente.property_sources import BufferSource
 from semente.configs.prompts import get_agent_config, get_tool_description, get_tool_result_text
 
 from domain.schemas.feature import Feature, FeatureMetadata
-from domain.services.geospatial.geometry import MAX_ABS_LATITUDE, build_buffered_area, is_valid_coordinate
+from domain.services.geospatial.geometry import MAX_ABS_LATITUDE, is_valid_coordinate
+from domain.services.geospatial.candidate import candidate_to_feature
 from domain.services.geospatial.image import RenderedImage, render_buffer_image
 from domain.services.geospatial.maps_url import MapsUrlError, extract_coordinates
 from domain.utils.feature_utils import get_registered_features, set_registered_features, summarize_feature
@@ -88,7 +90,8 @@ def _build_buffer_candidate(
 ) -> tuple[Feature, RenderedImage, str]:
     """Builds a buffer area candidate, its confirmation image and result text.
 
-    Pure with respect to the session: nothing is written to
+    The circle comes from Semente's ``BufferSource`` and is adapted to a
+    Feature by ``candidate_to_feature``. Pure with respect to the session: nothing is written to
     ``session_state``, so the caller can store the candidate only after
     every step (geometry, image, summary and template) has succeeded.
     Basemap network failures do not count as failures (the image falls back
@@ -109,7 +112,8 @@ def _build_buffer_candidate(
         Exception: Any geometry, rendering, summary or template error; the
         caller renders the tool-specific error text.
     """
-    buffer_area = build_buffered_area(latitude=latitude, longitude=longitude, radius=radius)
+    candidate = BufferSource(radius_m=radius).find_by_point(latitude, longitude)[0]
+    buffer_area = candidate_to_feature(candidate, latitude, longitude)
     rendered = render_buffer_image(buffer_area, origin_label=_origin_label("buffer_area"))
     content = get_tool_result_text(
         "property_tools", "start_buffer_registration_by_coordinate", "confirm_buffer_area",

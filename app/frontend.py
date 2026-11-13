@@ -29,6 +29,7 @@ _set_page_config = st.set_page_config
 # Semente 0.4 removed the fixed-coordinates location button; kept empty so a
 # future release can be hidden again without touching the install loop.
 _HIDDEN_BUTTONS: set[str] = set()
+_MEDIA_TYPES = {"png", "jpg", "jpeg", "webp", "wav", "mp3", "mp4"}
 
 LABELS = {
     "Login": "Sign in",
@@ -38,7 +39,7 @@ LABELS = {
     "User identification": "Your name or nickname",
     "Log In Anonymously": "Continue anonymously",
     "Log Out / Switch User": "Sign out / Switch user",
-    "Upload images/audio (png, jpg, mp3, etc)": "Upload images or audio",
+    "Envie imagens/áudio/mapas (png, jpg, mp3, zip, kmz, kml, geojson, etc)": "Upload images or audio",
     "Type your message...": "Ask about pastures...",
     "Analyzing data and generating response...": "Analyzing data and generating the answer...",
     "Error": "Sorry, I could not produce an answer. Please try again.",
@@ -109,6 +110,23 @@ def _selectbox(original):
         if options and isinstance(options[0], dict) and "nickname" in options[0]:
             kwargs["format_func"] = lambda user: user.get("nickname") or "User"
         return translating(label, options, *args, **kwargs)
+
+    wrapper.__wrapped__ = original
+    return wrapper
+
+
+def _media_uploader(original):
+    """Wraps ``st.file_uploader``: translates the label and keeps only image and audio types.
+
+    Semente 0.4.1 also accepts map files (zip, kmz, kml, geojson); Pasto10 registers areas
+    from coordinates only, so the accepted types are narrowed back to media.
+    """
+    translating = _translating(original)
+
+    def wrapper(*args, **kwargs):
+        if "type" in kwargs:
+            kwargs["type"] = [ext for ext in kwargs["type"] if ext in _MEDIA_TYPES]
+        return translating(*args, **kwargs)
 
     wrapper.__wrapped__ = original
     return wrapper
@@ -230,7 +248,7 @@ def install():
     st.button = _button(st.button)
     st.download_button = _button(st.download_button)
     st.selectbox = _selectbox(st.selectbox)
-    st.file_uploader = _translating(st.file_uploader)
+    st.file_uploader = _media_uploader(st.file_uploader)
     st.chat_input = _chat_input(st.chat_input)
     st.empty = _empty(st.empty)
     st.markdown = _markdown(st.markdown)

@@ -168,10 +168,10 @@ def test_a_new_link_replaces_a_pending_or_final_registration_silently(state):
 
 
 def test_geometry_failure_is_generic_and_atomic(monkeypatch, caplog):
-    def broken(**kwargs):
+    def broken(*args, **kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(property_tools, "build_buffered_area", broken)
+    monkeypatch.setattr(property_tools, "candidate_to_feature", broken)
     run_context = _context(registration_state="final", candidate_properties=[{"keep": True}])
 
     with caplog.at_level("ERROR"):

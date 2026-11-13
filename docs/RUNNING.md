@@ -71,17 +71,37 @@ PORT=8600 scripts/run_local.sh  # another port
 
 The script starts `streamlit run app/streamlit_app.py` with SQLite (`users_db.json` and the local
 session store; nothing external), `APP_ENV=development` and the manifest `semente.yaml`.
-Open <http://localhost:8501>.
+The default port is 8501; set `PORT` to use another one (the examples below assume 8501, so replace
+it with your `PORT`). Open <http://localhost:8501>.
 
-With Docker instead: `docker compose up` (same entrypoint on port 8501; give it the same variables).
-
-To stop it, press `Ctrl+C` in the terminal, or from another one:
+To stop it, press `Ctrl+C` in the terminal that runs it. If it was left running elsewhere, first check which
+process listens on the port and make sure it is Pasto10's Streamlit:
 
 ```
-pkill -f "streamlit run app/streamlit_app.py"
+lsof -nP -iTCP:8501 -sTCP:LISTEN   # shows the PID and the command
+kill <PID>                          # only after confirming it is the Pasto10 process
 ```
 
 Health check: `curl http://localhost:8501/_stcore/health` answers `ok`.
+
+### With Docker
+
+`docker compose up --build` builds the `Dockerfile` and starts the app. What each file does:
+
+- `Dockerfile`: Python 3.14 image with `uv`, `git` (to fetch `semente-agents`) and `ffmpeg`; it installs the
+  locked dependencies (`uv sync --frozen`), copies the code and starts
+  `streamlit run app/streamlit_app.py` on port 8501. The image has no credentials: `.dockerignore` leaves out
+  `.env`, key files, `tmp` and `logs`, so the variables and the Earth Engine key must be provided when it runs.
+  On its own it does not set `APP_ENV`, so the "Test properties" box is hidden (the production behaviour).
+- `compose.yaml`: mounts the repository over `/app` (code changes show up without rebuilding), runs
+  `uv run streamlit ...` (which also checks the environment at start, so it needs network), sets
+  `APP_ENV=development` (the test picker is on) and publishes host port **8501** (to use another host port,
+  edit the `ports` entry, for example `"8600:8501"`; `PORT` only applies to `scripts/run_local.sh`).
+  It requires a `.env` file and loads **all** of it into the container (unlike `scripts/run_local.sh`, which
+  reads only `GOOGLE_API_KEY` and `GEE_*`), so keep database, S3 and WhatsApp variables out of that file.
+  `GEE_KEY_FILE` must be a path that exists **inside** the container (the key is not copied into the image):
+  place the key file in a folder mounted into `/app` or add a volume for it.
+- Docker does not set `DATABASE_TYPE`; the default is SQLite inside the container.
 
 ## 6. Try it in the browser
 
@@ -122,11 +142,24 @@ End-to-end tests (real Earth Engine, Open-Meteo and network; need the `GEE_*` va
 
 ```
 set -a; source .env; set +a
-uv run pytest -m e2e -s                                 # everything (long)
-uv run pytest -m e2e -s tests/e2e/test_pasture_e2e.py   # one area at a time
-uv run pytest -m e2e -s tests/e2e/test_bulletin_e2e.py
+uv run pytest -m e2e -s                                 # everything (139 tests in 8 files, long)
+uv run pytest -m e2e -s tests/e2e/test_pasture_e2e.py   # one file at a time
 PASTO10_E2E_OUT=/some/dir uv run pytest -m e2e -s       # also keep maps and PDFs
+uv run pytest --collect-only -m e2e -q                  # list every e2e test
 ```
+
+The files in `tests/e2e/` (all but the weather one need the `GEE_*` variables; the video one also needs `ffmpeg`):
+
+| File | What it checks |
+| --- | --- |
+| `test_pasture_e2e.py` | Pasture tools: areas by year, Global Pasture Watch and the Random Forest classification |
+| `test_biomass_e2e.py` | Biomass tools on the 15 test properties (annual years and Time2Graze months) |
+| `test_biomass_video_e2e.py` | The biomass time-series video of each property (needs `ffmpeg`) |
+| `test_weather_e2e.py` | The five weather tools on the 15 properties (Open-Meteo only, no Earth Engine) |
+| `test_bulletin_e2e.py` | The PDF bulletin of each property |
+| `test_fallback_e2e.py` | Requests outside the available coverage return the nearest data and say so |
+| `test_ua_skill_e2e.py` | Arithmetic of the animal-unit skill on real biomass figures |
+| `test_generalist_e2e.py` | Whole chat flow over several continents, area consistency and concurrency |
 
 ## 8. Troubleshooting
 
@@ -135,7 +168,8 @@ PASTO10_E2E_OUT=/some/dir uv run pytest -m e2e -s       # also keep maps and PDF
 | `Env file not found` | Create `.env` (section 4) or pass the path as the first argument |
 | The assistant says the satellite data service is unavailable | `GEE_*` missing or wrong; check the key path, the service account registration and that the Earth Engine API is enabled |
 | `Earth Engine` permission or quota error | The service account is not registered for Earth Engine, or the project is not registered |
-| Port already in use | Another instance is running: stop it (section 5) or use `PORT=8600` |
+| Port already in use | Another instance is running: stop it (section 5) or use `PORT=8600` (with Docker, change the `ports` entry of `compose.yaml`) |
+| `[prompts]` lines in the log at start | Informational, from Semente's prompt loader. Pasto10 customises only the `description` of Semente's generic tools, so it logs "`results` missing - falling back to English default" for them (the English default is the text used) and "not in the English default (domain-specific addition; included as-is)" for the tools and agent keys that Pasto10 adds. Nothing to fix |
 | No "Test properties" box | `APP_ENV=development` is not set; use `scripts/run_local.sh` |
 | Video fails | Install `ffmpeg` |
 | `ImportError` when Streamlit starts | Use `uv sync --frozen`; Streamlit is pinned below 1.53 |

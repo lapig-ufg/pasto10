@@ -281,4 +281,17 @@ def test_login_user_selectbox_still_stores_nickname_in_semente():
 
 def test_uv_lock_pins_semente_to_a_git_commit():
     lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
-    assert re.search(r'source = \{ git = "https://github\.com/lapig-ufg/semente\.git#[0-9a-f]{40}" \}', lock)
+    assert re.search(r'source = \{ git = "https://github\.com/lapig-ufg/semente\.git(\?rev=[^"#]+)?#[0-9a-f]{40}" \}', lock)
+
+
+def test_file_uploader_keeps_only_media_types_and_translates_the_label():
+    from app.frontend import _media_uploader
+
+    seen = {}
+    wrapper = _media_uploader(lambda *args, **kwargs: seen.update(args=args, kwargs=kwargs))
+    wrapper(
+        "Envie imagens/áudio/mapas (png, jpg, mp3, zip, kmz, kml, geojson, etc)",
+        type=["png", "mp3", "zip", "kmz", "kml", "geojson", "json"],
+    )
+    assert seen["args"] == ("Upload images or audio",)
+    assert seen["kwargs"]["type"] == ["png", "mp3"]

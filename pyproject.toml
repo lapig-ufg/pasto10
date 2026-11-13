@@ -18,7 +18,8 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-semente-agents = { git = "https://github.com/lapig-ufg/semente.git" }
+# Provisional until the Semente PR is merged; then point rev to develop/release.
+semente-agents = { git = "https://github.com/lapig-ufg/semente.git", rev = "feat/property-source" }
 
 [dependency-groups]
 dev = [
