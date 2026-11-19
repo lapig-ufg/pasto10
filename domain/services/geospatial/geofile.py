@@ -3,14 +3,14 @@
 The user-facing intake formats (shapefile ``.zip``/``.rar``, KMZ, KML and
 GeoJSON) are converted to a single GeoJSON ``FeatureCollection`` by Semente's
 input step (``semente.services.geospatial.geojson_io.convert_geo_file_to_geojson``);
-this module turns any of those documents into the domain ``PropertyCandidate``
+this module turns any of those documents into the Semente ``PropertyCandidate``
 of a **rural property**.
 
 The converted document is always one feature whose geometry is a Polygon or a
 MultiPolygon, so a file with several paddocks becomes a single rural property
 (the union of its parts), which is the area Pasto10 analyzes. The content then
 goes through the same hardened parser as a pasted polygon
-(``user_polygon_source.parse_geojson``), with limits and a guard timeout suited
+(``polygon_input.parse_geojson``), with limits and a guard timeout suited
 to real files instead of hostile pasted JSON.
 """
 
@@ -19,6 +19,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
+from semente.property_sources import GeometryOrigin, PropertyCandidate
 from semente.services.geospatial.geojson_io import (
     GeoFileError,
     UnsupportedFormatError,
@@ -26,9 +27,7 @@ from semente.services.geospatial.geojson_io import (
     geopandas_import_available,
 )
 
-from domain.schemas.candidate import GeometryOrigin, PropertyCandidate
-from domain.schemas.feature import FeatureMetadata
-from domain.services.property_sources.user_polygon_source import InvalidPolygon, parse_geojson
+from domain.services.geospatial.polygon_input import InvalidPolygon, parse_geojson
 
 MAX_GEOFILE_MB_ENV = "PASTO10_MAX_GEOFILE_MB"
 MAX_GEOFILE_VERTICES_ENV = "PASTO10_MAX_GEOFILE_VERTICES"
@@ -43,6 +42,7 @@ DEFAULT_GEOFILE_TIMEOUT_SECONDS = 15.0
 MAX_CONVERTED_BYTES = 64 * 1024 * 1024
 SUPPORTED_EXTENSIONS = (".zip", ".rar", ".kmz", ".kml", ".geojson", ".json")
 MAX_SOURCE_NAME_LENGTH = 120
+RURAL_PROPERTY_FEATURE_TYPE = "rural_property"
 
 
 def _positive_int(env: str, default: int) -> int:
@@ -105,6 +105,11 @@ def source_name(filename: str) -> str:
     return name[:MAX_SOURCE_NAME_LENGTH]
 
 
+def _attributes(name: str) -> dict:
+    """Attributes carried by a geofile candidate (the file name and its feature type)."""
+    return {"source_file": name, "feature_type": RURAL_PROPERTY_FEATURE_TYPE}
+
+
 def parse_converted_geojson(content: Union[bytes, str], filename: str) -> PropertyCandidate:
     """Turns a GeoJSON already converted by Semente's input step into a rural-property candidate.
 
@@ -113,11 +118,12 @@ def parse_converted_geojson(content: Union[bytes, str], filename: str) -> Proper
         filename: Name of the converted file (used for the display name only).
 
     Returns:
-        PropertyCandidate: Origin ``rural_property``, source ``user``, named after
-        the file stem, with the file name in the ``source_file`` attribute.
+        PropertyCandidate: Origin ``user_polygon`` with the ``rural_property``
+        feature type in its attributes, source ``user``, named after the file
+        stem, with the file name in the ``source_file`` attribute.
 
     Raises:
-        InvalidPolygon: The kinds of ``user_polygon_source.parse_geojson``.
+        InvalidPolygon: The kinds of ``polygon_input.parse_geojson``.
     """
     name = source_name(filename)
     return parse_geojson(
@@ -126,10 +132,10 @@ def parse_converted_geojson(content: Union[bytes, str], filename: str) -> Proper
         max_vertices=max_geofile_vertices(),
         max_repair_vertices=max_geofile_repair_vertices(),
         timeout_seconds=geofile_timeout_seconds(),
-        origin=GeometryOrigin.RURAL_PROPERTY,
+        origin=GeometryOrigin.USER_POLYGON,
         candidate_id="geofile",
         name=Path(name).stem or "property",
-        attributes=[FeatureMetadata(key="source_file", value=name)],
+        attributes=_attributes(name),
     )
 
 
@@ -141,17 +147,18 @@ def parse_geofile(content: Union[bytes, bytearray], filename: str) -> PropertyCa
         filename: Original filename (its extension chooses the reader).
 
     Returns:
-        PropertyCandidate: Origin ``rural_property``, source ``user``, named after
-        the file stem, with the file name in the ``source_file`` attribute. A
-        file with several polygons becomes one MultiPolygon property (the union
-        of the parts).
+        PropertyCandidate: Origin ``user_polygon`` with the ``rural_property``
+        feature type in its attributes, source ``user``, named after the file
+        stem, with the file name in the ``source_file`` attribute. A file with
+        several polygons becomes one MultiPolygon property (the union of the
+        parts).
 
     Raises:
         InvalidPolygon: ``geo_stack_missing`` when the geo extra is not installed,
             ``file_too_large`` (upload or converted document), ``unsupported_format``
             (not a geo-intake extension), ``unreadable_file`` (corrupted or
             unreadable document, or no polygon inside), or one of the geometry
-            kinds of ``user_polygon_source`` (``too_large``, ``too_many_vertices``,
+            kinds of ``polygon_input`` (``too_large``, ``too_many_vertices``,
             ``too_complex``...).
     """
     name = source_name(filename)
@@ -175,3 +182,21 @@ def parse_geofile(content: Union[bytes, bytearray], filename: str) -> PropertyCa
         raise InvalidPolygon("unreadable_file", f"{type(error).__name__}: {error}") from error
 
     return parse_converted_geojson(converted, name)
+
+
+def attached_geofile(filename: str, content: bytes) -> Optional[PropertyCandidate]:
+    """Parses an attached file that is already GeoJSON or still a raw geofile.
+
+    Args:
+        filename: Original filename of the attachment.
+        content: Raw bytes of the attachment.
+
+    Returns:
+        PropertyCandidate | None: The candidate, or None when the file is not a
+        supported geofile (the caller then reports a missing boundary).
+    """
+    if not is_supported_geofile(filename):
+        return None
+    if Path(filename).suffix.lower() in (".geojson", ".json"):
+        return parse_converted_geojson(content, filename)
+    return parse_geofile(content, filename)

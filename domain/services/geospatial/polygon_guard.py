@@ -1,7 +1,7 @@
 """Standalone guard that validates a user polygon in a separate process.
 
 GEOS (the engine behind shapely) cannot be interrupted from a thread, and repairing a large self-intersecting polygon
-can take minutes, so ``user_polygon_source.parse_geojson`` runs the shapely work of a user polygon here, as a child
+can take minutes, so ``polygon_input.parse_geojson`` runs the shapely work of a user polygon here, as a child
 process killed after a few seconds. The repair limit is a TOTAL budget over the invalid geometries of the request, not per geometry. The script imports only ``geometry_core`` (shapely and numpy), never the app.
 
 Protocol: reads ONE JSON document from stdin, ``{"geometries": [...], "max_area_ha": n, "min_area_ha": n,

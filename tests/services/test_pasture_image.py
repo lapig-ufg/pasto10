@@ -13,6 +13,7 @@ from domain.schemas.pasture import PastureAreaStats, PastureSource
 from domain.services.geospatial import pasture_image
 from domain.services.geospatial.basemap import latlon_to_pixel
 from domain.services.geospatial.geometry import build_buffered_area
+from domain.services.geospatial.image import NEUTRAL_BACKGROUND
 
 SIZE = (640, 640)
 OVERLAY_GREEN = (0, 200, 0, 255)
@@ -31,7 +32,7 @@ def fake_overlay(monkeypatch):
     def fetch(image, bounds, size, scale):
         seen.update(image=image, bounds=bounds, size=size, scale=scale)
         overlay = Image.new("RGBA", size, (0, 0, 0, 0))
-        overlay.paste(Image.new("RGBA", (100, 100), OVERLAY_GREEN), (20, 300))
+        overlay.paste(Image.new("RGBA", size, OVERLAY_GREEN), (0, 0))
         return overlay
 
     monkeypatch.setattr(pasture_image, "_fetch_overlay", fetch)
@@ -58,8 +59,9 @@ def test_render_over_neutral_background_is_png_with_overlay(fake_overlay):
     assert image.size == SIZE
     assert fake_overlay["scale"] == 30
     assert fake_overlay["image"] == "ee-image" and fake_overlay["size"] == SIZE
-    r, g, b = image.getpixel((70, 350))
+    r, g, b = image.getpixel((320, 340))
     assert g > r and g > b
+    assert image.getpixel((70, 350)) == NEUTRAL_BACKGROUND
 
 
 def test_render_over_basemap_is_jpeg(fake_overlay, online_tiles):
@@ -153,3 +155,21 @@ def test_the_legend_shows_both_class_names_completely_inside_the_image():
     assert box is not None and box[2] < 640 * 0.6 and box[3] <= 591 and box[0] >= 0
     longest = max(len(label) for label, _ in pasture_image._LEGEND_ENTRIES)
     assert longest > 20  # the full "Natural/semi-natural grassland" name must fit in that box
+
+
+def test_clip_overlay_keeps_only_the_inside_of_the_ring_with_a_smooth_edge():
+    overlay = Image.new("RGBA", (100, 100), (0, 200, 0, 255))
+    ring = [(20, 20), (80, 20), (80, 80), (20, 80)]
+
+    clipped = pasture_image.clip_overlay(overlay, ring)
+
+    assert clipped.getpixel((50, 50))[3] == 255
+    assert clipped.getpixel((5, 5))[3] == 0 and clipped.getpixel((95, 50))[3] == 0
+    assert overlay.getpixel((5, 5))[3] == 255
+
+
+def test_clip_overlay_keeps_the_overlay_own_transparency_inside_the_ring():
+    overlay = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+    ring = [(10, 10), (90, 10), (90, 90), (10, 90)]
+
+    assert pasture_image.clip_overlay(overlay, ring).getchannel("A").getextrema() == (0, 0)

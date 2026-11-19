@@ -83,6 +83,30 @@ def test_no_registered_area_and_unknown_name(monkeypatch):
     assert "no registered area" in empty.content and "Lake" in unknown.content and not empty.videos and not unknown.videos
 
 
+@pytest.mark.parametrize("years", [1, 50, -3])
+def test_years_outside_the_allowed_range_are_stated_in_the_annual_fallback(monkeypatch, years):
+    monkeypatch.setattr(biomass_tools, "render_video", lambda feature, years: _video("annual", ("2024", "2025")))
+
+    result = biomass_tools.generate_biomass_video(run_context=_context(), years=years)
+
+    assert f"asked for {years} annual frames" in result.content and "2 to 12" in result.content
+
+
+@pytest.mark.parametrize("years", [None, 0, 2, 12])
+def test_years_inside_the_allowed_range_have_no_adjustment_note(monkeypatch, years):
+    monkeypatch.setattr(biomass_tools, "render_video", lambda feature, years: _video("annual", ("2024", "2025")))
+
+    result = biomass_tools.generate_biomass_video(run_context=_context(), years=years)
+
+    assert "outside the allowed range" not in result.content
+
+
+def test_description_says_frames_show_the_periods_actually_available():
+    description = get_tool_description("biomass_tools", "generate_biomass_video")
+
+    assert "frame labels" in description and "adjusted" in description
+
+
 def test_description_explains_the_mode_rule():
     description = get_tool_description("biomass_tools", "generate_biomass_video")
 

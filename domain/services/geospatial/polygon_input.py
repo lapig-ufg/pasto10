@@ -4,7 +4,7 @@
 geometry in WGS84 lon/lat, repairs it, enforces size limits and returns a
 ``PropertyCandidate`` with origin ``user_polygon`` (or the origin the caller
 asks for). Raw geospatial documents (shapefile .zip/.rar, KMZ, KML) are
-converted first by ``geofile_source.parse_geofile``.
+converted first by ``geofile.parse_geofile``.
 
 The input is hostile by default and defended in layers: (1) limits on bytes, features, rings and vertices, checked on the
 raw JSON before any geometry is built, with finite lon/lat coordinates required; (2) invalid polygons with more than
@@ -22,8 +22,7 @@ import threading
 from pathlib import Path
 from typing import Optional, Union
 
-from domain.schemas.candidate import GeometryOrigin, PropertyCandidate
-from domain.schemas.feature import FeatureMetadata
+from semente.property_sources import GeometryOrigin, PropertyCandidate
 
 MAX_AREA_HA_ENV = "PASTO10_MAX_POLYGON_HA"
 MAX_VERTICES_ENV = "PASTO10_MAX_POLYGON_VERTICES"
@@ -220,7 +219,7 @@ def parse_geojson(
     origin: GeometryOrigin = GeometryOrigin.USER_POLYGON,
     candidate_id: str = "user-polygon",
     name: Optional[str] = None,
-    attributes: Optional[list[FeatureMetadata]] = None,
+    attributes: Optional[dict] = None,
 ) -> PropertyCandidate:
     """Turns GeoJSON into a user-polygon candidate.
 
@@ -244,7 +243,7 @@ def parse_geojson(
         origin (GeometryOrigin): Origin stored in the candidate (and its feature type).
         candidate_id (str): Stable candidate identifier.
         name (str, optional): Display name of the candidate (for example the uploaded file stem).
-        attributes (list[FeatureMetadata], optional): Extra source attributes of the candidate.
+        attributes (dict, optional): Extra source attributes of the candidate.
 
     Returns:
         PropertyCandidate: Candidate with the requested origin, source ``user`` and no distance.
@@ -275,5 +274,5 @@ def parse_geojson(
         raise InvalidPolygon(answer.get("kind", "invalid_geometry"), f"guard: {answer.get('kind')}")
     return PropertyCandidate(
         candidate_id=candidate_id, name=name, origin=origin, source="user", geometry=answer["geometry"],
-        area_ha=round(answer["area_ha"], 2), distance_m=None, attributes=attributes or [], warnings=[],
+        area_ha=round(answer["area_ha"], 2), distance_m=None, attributes=attributes or {}, warnings=[],
     )

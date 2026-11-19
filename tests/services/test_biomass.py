@@ -33,10 +33,10 @@ class FakeImage:
 @pytest.fixture(autouse=True)
 def clean(monkeypatch):
     monkeypatch.delenv(biomass.pasture.CACHE_DIR_ENV, raising=False)
-    for cache in (biomass._stats_cache, biomass._range_cache):
+    for cache in (biomass._stats_cache, biomass._range_cache, biomass._latest_cache):
         cache.clear()
     yield
-    for cache in (biomass._stats_cache, biomass._range_cache):
+    for cache in (biomass._stats_cache, biomass._range_cache, biomass._latest_cache):
         cache.clear()
 
 
@@ -64,6 +64,8 @@ def fake_ee(monkeypatch):
     monkeypatch.setattr(biomass, "_gpp_biomass", lambda year: FakeImage())
     monkeypatch.setattr(biomass, "_t2g_biomass", lambda roi, period: FakeImage())
     monkeypatch.setattr(biomass, "_t2g_count", lambda roi, start, end: state["images"])
+    state["count_calls"] = []
+    monkeypatch.setattr(biomass, "_t2g_count", lambda roi, start, end: state["count_calls"].append((start, end)) or state["images"])
     monkeypatch.setattr(biomass, "_reduce_biomass", reduce)
     return state
 
@@ -115,19 +117,110 @@ def test_year_after_gpw_accumulates_the_covered_part_of_the_year(fake_ee):
     assert period.mask_year == 2022
 
 
-@pytest.mark.parametrize("year, month, kind", [(2025, 7, "month"), (None, 13, "month"), (None, 0, "month"), (1999, None, "year"), (2030, None, "year")])
-def test_unavailable_periods_never_fall_back_to_gpw(fake_ee, year, month, kind):
+@pytest.mark.parametrize("month", [13, 0, -1])
+def test_a_month_that_is_not_1_to_12_is_unavailable(fake_ee, month):
     with pytest.raises(biomass.BiomassPeriodUnavailable) as error:
-        biomass.resolve_biomass_period(year, month)
+        biomass.resolve_biomass_period(None, month)
 
-    assert error.value.kind == kind
+    assert error.value.kind == "month" and (error.value.first, error.value.last) == ("2026-06-27", "2026-08-21")
 
 
-def test_month_unavailable_reports_the_time2graze_range(fake_ee):
+@pytest.mark.parametrize("year", [1999, 1990, 1, 0, -5])
+def test_year_below_the_coverage_gives_the_oldest_year(fake_ee, year):
+    period = biomass.resolve_biomass_period(year, None)
+
+    assert period.source is BiomassSource.GPW_ANNUAL and period.label == "2000" and period.mask_year == 2000
+    assert period.requested_label == str(year) and (period.start, period.end) == (date(2000, 1, 1), date(2000, 12, 31))
+
+
+@pytest.mark.parametrize("year", [2027, 2030, 2100, 9999, 10000])
+def test_year_above_the_coverage_gives_the_latest_year(fake_ee, year):
+    period = biomass.resolve_biomass_period(year, None)
+
+    assert period.source is BiomassSource.TIME2GRAZE and period.label == "2026" and period.partial
+    assert period.requested_label == str(year) and (period.start, period.end) == T2G_RANGE
+
+
+def test_year_above_the_coverage_without_time2graze_gives_the_last_annual_year(fake_ee):
+    fake_ee["range"] = None
+
+    period = biomass.resolve_biomass_period(2100, None)
+
+    assert period.source is BiomassSource.GPW_ANNUAL and period.label == "2025" and period.requested_label == "2100"
+
+
+@pytest.mark.parametrize("year", [2000, 2010, 2025, 2026])
+def test_years_inside_the_coverage_and_its_exact_limits_are_not_adjusted(fake_ee, year):
+    assert biomass.resolve_biomass_period(year, None).requested_label is None
+
+
+@pytest.mark.parametrize("year, month", [(2020, 1), (2025, 7), (2026, 5), (1990, 12), (2000, 1)])
+def test_month_before_the_coverage_gives_the_first_covered_month(fake_ee, year, month):
+    period = biomass.resolve_biomass_period(year, month)
+
+    assert period.source is BiomassSource.TIME2GRAZE and period.label == "2026-06" and period.partial
+    assert period.requested_label == f"{year}-{month:02d}" and (period.start, period.end) == (date(2026, 6, 27), date(2026, 6, 30))
+
+
+@pytest.mark.parametrize("year, month", [(2030, 1), (2026, 9), (2026, 12), (2100, 7)])
+def test_month_after_the_coverage_gives_the_last_covered_month(fake_ee, year, month):
+    period = biomass.resolve_biomass_period(year, month)
+
+    assert period.label == "2026-08" and period.requested_label == f"{year}-{month:02d}"
+    assert (period.start, period.end) == (date(2026, 8, 1), date(2026, 8, 21))
+
+
+@pytest.mark.parametrize("month, label, adjusted", [(6, "2026-06", False), (7, "2026-07", False), (8, "2026-08", False), (9, "2026-08", True), (5, "2026-06", True)])
+def test_month_without_year_refers_to_the_latest_time2graze_year(fake_ee, month, label, adjusted):
+    period = biomass.resolve_biomass_period(None, month)
+
+    assert period.label == label and (period.requested_label is not None) is adjusted
+    if adjusted:
+        assert period.requested_label == f"2026-{month:02d}"
+
+
+def test_months_inside_the_coverage_are_not_adjusted(fake_ee):
+    assert biomass.resolve_biomass_period(2026, 7).requested_label is None
+    assert biomass.resolve_biomass_period(2026, 6).requested_label is None
+    assert biomass.resolve_biomass_period(2026, 8).requested_label is None
+
+
+def test_month_without_time2graze_data_is_unavailable_never_adjusted(fake_ee):
+    fake_ee["range"] = None
+
     with pytest.raises(biomass.BiomassPeriodUnavailable) as error:
-        biomass.resolve_biomass_period(2025, 7)
+        biomass.resolve_biomass_period(2030, 1)
 
-    assert (error.value.first, error.value.last) == ("2026-06-27", "2026-08-21")
+    assert error.value.kind == "month"
+
+
+def test_stats_carry_the_requested_period_but_the_cache_does_not(fake_ee):
+    feature = _feature()
+
+    adjusted = biomass.get_biomass_total(feature, 2100, None)
+    plain = biomass.get_biomass_total(feature, 2026, None)
+    again = biomass.get_biomass_total(feature, 2100, None)
+
+    assert adjusted.requested_label == "2100" and adjusted.period_label == "2026"
+    assert plain.requested_label is None and again.requested_label == "2100"
+    assert len(fake_ee["reduce"]) == 1
+
+
+def test_build_biomass_reports_the_requested_period_in_the_image_and_stats(fake_ee):
+    image, roi = biomass.build_biomass(_feature(), None, 1)
+    stats = biomass.measure_biomass(image, roi)
+
+    assert image.period.requested_label == "2026-01" and stats.period_label == "2026-06" and stats.requested_label == "2026-01"
+
+
+def test_coverage_describes_annual_and_time2graze_ranges(fake_ee):
+    coverage = biomass.biomass_coverage()
+    fake_ee["range"] = None
+    biomass._range_cache.clear()
+
+    assert (coverage.first_year, coverage.last_year, coverage.annual_last_year) == (2000, 2026, 2025)
+    assert (coverage.t2g_start, coverage.t2g_end) == ("2026-06-27", "2026-08-21")
+    assert biomass.biomass_coverage() == biomass.BiomassCoverage(2000, 2025, 2025, None, None)
 
 
 def test_without_time2graze_data_months_are_unavailable(fake_ee):
@@ -146,13 +239,51 @@ def test_time2graze_range_is_cached(fake_ee):
     assert fake_ee["range_calls"] == 1 and biomass._range_cache.ttl == 86_400
 
 
-def test_time2graze_period_without_images_for_the_area_is_unavailable(fake_ee):
+def test_month_without_images_for_any_covered_month_falls_back_to_the_latest_annual_year(fake_ee):
     fake_ee["images"] = 0
 
-    with pytest.raises(biomass.BiomassPeriodUnavailable) as error:
-        biomass.build_biomass(_feature(), None, 7)
+    image, _roi = biomass.build_biomass(_feature(), None, 7)
 
-    assert error.value.kind == "month"
+    assert image.period.source is BiomassSource.GPW_ANNUAL and image.period.year == biomass.GPP_LAST_YEAR
+    assert image.period.requested_label == "2026-07"
+
+
+def _images_only_in(monkeypatch, months):
+    seen = []
+
+    def count(roi, start, end):
+        seen.append((start.year, start.month))
+        return 4 if (start.year, start.month) in months else 0
+
+    monkeypatch.setattr(biomass, "_t2g_count", count)
+    return seen
+
+
+def test_month_without_images_walks_back_to_the_nearest_earlier_month_with_images(fake_ee, monkeypatch):
+    seen = _images_only_in(monkeypatch, {(2026, 6)})
+
+    period = biomass.nearest_month_with_images("roi", biomass.resolve_biomass_period(2026, 8))
+
+    assert period.label == "2026-06" and period.requested_label == "2026-08"
+    assert seen == [(2026, 8), (2026, 7), (2026, 6)]
+
+
+def test_month_with_images_is_served_as_asked_without_further_lookups(fake_ee, monkeypatch):
+    seen = _images_only_in(monkeypatch, {(2026, 7)})
+
+    period = biomass.nearest_month_with_images("roi", biomass.resolve_biomass_period(2026, 7))
+
+    assert period.label == "2026-07" and period.requested_label is None and seen == [(2026, 7)]
+
+
+@pytest.mark.parametrize("year, month", [(2026, 9), (2030, 1), (2100, 12), (2020, 1), (1990, 6)])
+def test_requests_outside_the_coverage_cost_a_bounded_number_of_image_counts(fake_ee, monkeypatch, year, month):
+    seen = _images_only_in(monkeypatch, set())
+
+    period = biomass._period_for(_feature(), "roi", year, month)
+
+    assert period.source is BiomassSource.GPW_ANNUAL and period.requested_label == f"{year}-{month:02d}"
+    assert len(seen) <= 3
 
 
 def test_build_masks_with_grassland_and_positive_productivity(fake_ee, monkeypatch):
@@ -163,33 +294,8 @@ def test_build_masks_with_grassland_and_positive_productivity(fake_ee, monkeypat
     image, _roi = biomass.build_biomass(_feature(), 2010, None)
 
     assert any(name == "updateMask" for name, _ in image.image.calls)
-    assert any(name == "clip" for name, _ in image.image.calls)
     assert any(name == "gt" and args == (0,) for name, args in calls)
     assert image.period.mask_year == 2010 and image.n_images is None
-
-
-def test_build_without_pasture_mask_keeps_only_positive_biomass(fake_ee, monkeypatch):
-    calls = []
-    monkeypatch.setattr(biomass, "_gpp_biomass", lambda year: FakeImage(calls))
-    monkeypatch.setattr(biomass, "_mask_image", lambda mask_year: pytest.fail("no pasture mask should be built"))
-
-    image, _roi = biomass.build_biomass(_feature(), 2010, None, mask_to_pasture=False)
-
-    assert any(name == "gt" and args == (0,) for name, args in calls)
-    assert any(name == "updateMask" for name, args in image.image.calls)
-    assert any(name == "clip" for name, args in image.image.calls)
-    assert image.coverage is None
-    assert image.key[-1] == "all-biomass"
-
-
-def test_all_biomass_stats_use_a_distinct_cache_key(fake_ee):
-    masked, _ = biomass.build_biomass(_feature(), 2010, None)
-    all_biomass, _ = biomass.build_biomass(_feature(), 2010, None, mask_to_pasture=False)
-
-    stats = biomass.measure_biomass(all_biomass, "roi")
-
-    assert masked.key != all_biomass.key
-    assert stats.total_t == 3500.0 and stats.pasture_ha == 200.0
 
 
 def test_gpp_biomass_applies_the_conversion_factor(monkeypatch):
@@ -301,12 +407,11 @@ def test_disk_cache_skips_earth_engine(fake_ee, monkeypatch, tmp_path):
     assert second == first and len(fake_ee["reduce"]) == 1 and len(list(tmp_path.glob("*.json"))) == 1
 
 
-@pytest.mark.parametrize("year, month", [(0, 7), (-5, None), (10000, 7), (0, None)])
-def test_invalid_calendar_years_are_unavailable_not_value_errors(fake_ee, year, month):
-    with pytest.raises(biomass.BiomassPeriodUnavailable) as error:
-        biomass.resolve_biomass_period(year, month)
+@pytest.mark.parametrize("year, month", [(0, 7), (-5, None), (10000, 7), (0, None), (-5, 3)])
+def test_invalid_calendar_years_are_adjusted_not_value_errors(fake_ee, year, month):
+    period = biomass.resolve_biomass_period(year, month)
 
-    assert error.value.kind == "year"
+    assert period.requested_label is not None and period.label in {"2000", "2026-06", "2026-08"}
 
 
 def test_time2graze_end_day_is_inclusive_in_the_day_count(fake_ee):
@@ -324,6 +429,149 @@ def test_time2graze_stats_report_the_spatial_data_coverage_and_annual_stats_do_n
     annual = biomass.get_biomass_total(_feature(), 2020, None)
 
     assert monthly.data_coverage == 0.8 and annual.data_coverage is None
+
+
+def test_latest_without_year_and_month_is_the_last_time2graze_month_flagged_partial(fake_ee):
+    stats = biomass.get_biomass_total(_feature(), None, None)
+
+    assert stats.source is BiomassSource.TIME2GRAZE and stats.period_label == "2026-08" and stats.partial
+    assert (stats.start, stats.end, stats.days_covered, stats.scale_m) == ("2026-08-01", "2026-08-21", 21, 10)
+    assert fake_ee["count_calls"][0] == (date(2026, 8, 1), date(2026, 8, 21))
+
+
+def test_latest_is_a_complete_month_when_the_range_ends_on_its_last_day(fake_ee):
+    fake_ee["range"] = (date(2026, 6, 27), date(2026, 8, 31))
+
+    stats = biomass.get_biomass_total(_feature(), None, None)
+
+    assert stats.period_label == "2026-08" and not stats.partial and stats.days_covered == 31
+
+
+def test_latest_falls_back_to_the_annual_year_without_images_over_the_area(fake_ee):
+    fake_ee["images"] = 0
+
+    image, _ = biomass.build_biomass(_feature(), None, None)
+    stats = biomass.get_biomass_total(_feature(), None, None)
+
+    assert image.period.source is BiomassSource.GPW_ANNUAL and image.period.year == biomass.GPP_LAST_YEAR
+    assert stats.source is BiomassSource.GPW_ANNUAL and stats.period_label == "2025" and not stats.partial
+    assert fake_ee["reduce"] == [30]
+
+
+def test_latest_falls_back_to_the_annual_year_without_a_time2graze_range(fake_ee):
+    fake_ee["range"] = None
+
+    stats = biomass.get_biomass_total(_feature(), None, None)
+
+    assert stats.period_label == "2025" and fake_ee["count_calls"] == []
+
+
+def test_resolve_biomass_period_stays_pure_for_the_annual_default(fake_ee):
+    period = biomass.resolve_biomass_period(None, None)
+
+    assert period.source is BiomassSource.GPW_ANNUAL and period.year == 2025 and fake_ee["count_calls"] == []
+
+
+def test_explicit_year_and_month_do_not_use_the_latest_rule(fake_ee):
+    annual = biomass.get_biomass_total(_feature(), 2025, None)
+    monthly = biomass.get_biomass_total(_feature(), None, 7)
+
+    assert annual.period_label == "2025" and annual.source is BiomassSource.GPW_ANNUAL
+    assert monthly.period_label == "2026-07" and monthly.source is BiomassSource.TIME2GRAZE
+    assert set(fake_ee["count_calls"]) == {(date(2026, 7, 1), date(2026, 7, 31))}
+
+
+def test_build_and_total_share_the_cache_key_for_the_latest_period(fake_ee):
+    feature = _feature()
+
+    image, roi = biomass.build_biomass(feature, None, None)
+    measured = biomass.measure_biomass(image, roi)
+    again = biomass.get_biomass_total(feature, None, None)
+
+    assert again is measured and len(fake_ee["reduce"]) == 1
+    assert image.key[4] == "2026-08-21" and image.key in biomass._stats_cache.keys()
+
+
+def test_latest_resolution_is_cached_per_area(fake_ee):
+    feature = _feature()
+
+    biomass.get_biomass_total(feature, None, None)
+    biomass.build_biomass(feature, None, None)
+
+    assert len(fake_ee["count_calls"]) == 3  # resolution count + its image build + the later build_biomass (the total was already cached)
+
+
+def test_a_moved_time2graze_range_never_serves_a_stale_latest(fake_ee):
+    feature = _feature()
+    first = biomass.get_biomass_total(feature, None, None)
+    biomass._range_cache.clear()
+    fake_ee["range"] = (date(2026, 6, 27), date(2026, 9, 10))
+
+    second = biomass.get_biomass_total(feature, None, None)
+
+    assert (first.period_label, first.end) == ("2026-08", "2026-08-21")
+    assert (second.period_label, second.end) == ("2026-09", "2026-09-10")
+    assert len(fake_ee["reduce"]) == 2
+
+
+def test_latest_falls_back_to_the_annual_year_when_the_month_has_no_productive_pasture(fake_ee, monkeypatch):
+    def reduce(image, roi, scale, coverage=None):
+        fake_ee["reduce"].append(scale)
+        if scale == 10:
+            return {"total": 0.0, "valid": 0.0, "area": 312.5, "p2": None, "p98": None, "grass": 100.0, "covered": 0.0}
+        return fake_ee["reduced"]
+
+    monkeypatch.setattr(biomass, "_reduce_biomass", reduce)
+
+    stats = biomass.get_biomass_total(_feature(), None, None)
+
+    assert stats.source is BiomassSource.GPW_ANNUAL and stats.period_label == "2025"
+    with pytest.raises(biomass.NoPastureBiomass):
+        biomass.get_biomass_total(_feature(), None, 8)
+
+
+def test_annual_year_inside_the_global_pasture_watch_range_never_queries_time2graze(monkeypatch):
+    def boom():
+        raise AssertionError("t2g_date_range must not be called for an annual year inside the GPW range")
+
+    monkeypatch.setattr(biomass, "t2g_date_range", boom)
+
+    period = biomass.resolve_biomass_period(2020, None)
+
+    assert period.year == 2020 and period.requested_label is None
+
+
+def test_year_between_the_last_annual_year_and_a_later_time2graze_start_serves_the_last_annual_year(fake_ee):
+    fake_ee["range"] = (date(2030, 2, 1), date(2030, 4, 30))
+    biomass._range_cache.clear() if hasattr(biomass._range_cache, "clear") else None
+
+    period = biomass.resolve_biomass_period(2026, None)
+
+    assert period.year == biomass.GPP_LAST_YEAR and period.requested_label == "2026"
+
+
+def test_build_without_pasture_mask_keeps_only_positive_biomass(fake_ee, monkeypatch):
+    calls = []
+    monkeypatch.setattr(biomass, "_gpp_biomass", lambda year: FakeImage(calls))
+    monkeypatch.setattr(biomass, "_mask_image", lambda mask_year: pytest.fail("no pasture mask should be built"))
+
+    image, _roi = biomass.build_biomass(_feature(), 2010, None, mask_to_pasture=False)
+
+    assert any(name == "gt" and args == (0,) for name, args in calls)
+    assert any(name == "updateMask" for name, args in image.image.calls)
+    assert any(name == "clip" for name, args in image.image.calls)
+    assert image.coverage is None
+    assert image.key[-1] == "all-biomass"
+
+
+def test_all_biomass_stats_use_a_distinct_cache_key(fake_ee):
+    masked, _ = biomass.build_biomass(_feature(), 2010, None)
+    all_biomass, _ = biomass.build_biomass(_feature(), 2010, None, mask_to_pasture=False)
+
+    stats = biomass.measure_biomass(all_biomass, "roi")
+
+    assert masked.key != all_biomass.key
+    assert stats.total_t == 3500.0 and stats.pasture_ha == 200.0
 
 
 def test_transect_measurement_extrapolates_the_line_mean_to_the_property_area(monkeypatch):

@@ -237,10 +237,13 @@ def test_units_and_separators_inside_the_pdf_come_from_the_yaml(services, monkey
     assert "250.25 hectares" in text and "17.39 tonnes per hectare" in text and "2025 from 2025-01-01 until 2025-12-31, 365 days" in text
 
 
-def test_partial_note_only_appears_for_partial_time2graze_data(services):
+def test_short_period_note_appears_for_time2graze_data_and_not_for_annual(services):
     _, _, stats = services
+    annual = "\n".join(_pages(report_tools.generate_area_bulletin(run_context=_context())))
     stats["biomass"] = BIOMASS.model_copy(update={"source": BiomassSource.TIME2GRAZE, "year": 2026, "period_label": "2026-07", "days_covered": 31, "n_images": 7})
 
-    text = "\n".join(_pages(report_tools.generate_area_bulletin(run_context=_context())))
+    monthly = "\n".join(_pages(report_tools.generate_area_bulletin(run_context=_context())))
 
-    assert "short-period and indicative" not in text and "Time2Graze" in text
+    assert "short-period and indicative" not in annual
+    assert "short-period and indicative" in monthly and "Time2Graze" in monthly and "2026-07" in monthly
+    assert "Global Pasture Watch (annual" not in monthly

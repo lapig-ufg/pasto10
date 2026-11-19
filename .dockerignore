@@ -1,0 +1,14 @@
+.git
+.venv
+.claude
+.env
+.env.*
+!.env.example
+*.pem
+*key*.json
+*credentials*.json
+tmp
+logs
+__pycache__
+.pytest_cache
+users_db.json

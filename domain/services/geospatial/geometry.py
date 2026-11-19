@@ -1,20 +1,24 @@
-"""Geometry service — pure-Python geodesic buffer polygons.
+"""Geometry service — coordinate validation, geodesic distance and the buffer area Feature.
 
-Builds the circular buffer area Feature (64-vertex ring on a sphere, area
-π·r²/10⁴ ha) without any projection library.
+The circle itself is built by Semente's ``BufferSource`` (64-vertex ring on a
+sphere, area π·r²/10⁴ ha); this module validates coordinates and wraps the
+result as a Feature.
 """
 
 import math
-from typing import List, Tuple
+from typing import Tuple
 
 from semente.logging import log_error
+from semente.property_sources import BufferSource
 
-from domain.schemas.feature import Feature, FeatureMetadata
+from domain.schemas.feature import Feature
+from domain.services.geospatial.candidate import candidate_to_feature
 
 # Mean Earth radius (IUGG), used for the spherical geodesic computations.
 EARTH_RADIUS_METERS = 6_371_008.8
-BUFFER_VERTICES = 64
-_SQUARE_METERS_PER_HECTARE = 10_000.0
+# Web Mercator basemaps do not cover the poles; ±85° keeps the image meaningful.
+MAX_ABS_LATITUDE = 85
+MAX_ABS_LONGITUDE = 180
 
 
 def normalize_longitude(longitude: float) -> float:
@@ -27,6 +31,28 @@ def normalize_longitude(longitude: float) -> float:
         float: The equivalent longitude in [-180, 180).
     """
     return (longitude + 180.0) % 360.0 - 180.0
+
+
+def is_valid_coordinate(latitude: float, longitude: float) -> bool:
+    """Checks that a coordinate is finite and inside the supported range.
+
+    Args:
+        latitude (float): Latitude in decimal degrees.
+        longitude (float): Longitude in decimal degrees.
+
+    Returns:
+        bool: True when both values are finite numbers with
+        ``|latitude| <= MAX_ABS_LATITUDE`` and ``|longitude| <= MAX_ABS_LONGITUDE``;
+        False otherwise (including non-numeric values).
+    """
+    try:
+        return (
+            math.isfinite(latitude) and math.isfinite(longitude)
+            and abs(latitude) <= MAX_ABS_LATITUDE
+            and abs(longitude) <= MAX_ABS_LONGITUDE
+        )
+    except TypeError:
+        return False
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -102,55 +128,6 @@ def destination_point(
     return math.degrees(phi2), normalize_longitude(math.degrees(lambda2))
 
 
-def circle_area_hectares(radius: float) -> float:
-    """Returns the area of a circle of the given radius in hectares (π·r²/10⁴).
-
-    Args:
-        radius (float): Circle radius in meters.
-
-    Returns:
-        float: Area in hectares.
-    """
-    return math.pi * radius ** 2 / _SQUARE_METERS_PER_HECTARE
-
-
-def create_buffer_polygon(
-    latitude: float,
-    longitude: float,
-    radius: float,
-    vertices: int = BUFFER_VERTICES,
-) -> List[List[List[List[float]]]]:
-    """Creates a circular buffer polygon around a geographic coordinate.
-
-    Each vertex is the geodesic destination point at ``radius`` meters from
-    the center, at evenly spaced bearings starting from north. The ring is
-    closed (first vertex repeated at the end), as GeoJSON requires.
-
-    Args:
-        latitude (float): Center latitude in decimal degrees.
-        longitude (float): Center longitude in decimal degrees.
-        radius (float): Buffer radius in meters (must be > 0).
-        vertices (int): Number of distinct vertices of the ring (≥ 3).
-
-    Returns:
-        GeoJSON MultiPolygon nested coordinates (``[[[ [lon, lat], ... ]]]``).
-
-    Raises:
-        ValueError: If ``radius`` is not positive or ``vertices`` < 3.
-    """
-    if radius <= 0:
-        raise ValueError(f"Buffer radius must be positive, got {radius}.")
-    if vertices < 3:
-        raise ValueError(f"A buffer ring needs at least 3 vertices, got {vertices}.")
-
-    ring = []
-    for i in range(vertices):
-        lat, lon = destination_point(latitude, longitude, 360.0 * i / vertices, radius)
-        ring.append([lon, lat])
-    ring.append(list(ring[0]))
-    return [[ring]]
-
-
 def build_buffered_area(
     latitude: float,
     longitude: float,
@@ -158,11 +135,9 @@ def build_buffered_area(
 ) -> Feature:
     """Builds a buffer area Feature from a coordinate and a radius in meters.
 
-    Generates the circular polygon in pure Python (no projection library),
-    computes its area as π·r²/10⁴ hectares and packages everything into the
-    general Feature model with ``feature_type='buffer_area'``. The radius
-    (``unit="m"``) and the center (``"lat, lon"``) are stored as metadata; a generated id
-    becomes the stable ``feature_id``.
+    Asks ``BufferSource`` for the circle and converts the candidate with
+    ``candidate_to_feature`` (``feature_type='buffer_area'``, ``radius`` in
+    meters and ``center`` as metadata, a generated ``feature_id``).
 
     Args:
         latitude (float): Center latitude in decimal degrees.
@@ -173,21 +148,11 @@ def build_buffered_area(
         Feature: The buffer area feature (not yet stored anywhere).
 
     Raises:
-        ValueError: If the polygon cannot be built (see ``create_buffer_polygon``).
+        ValueError: If the radius or the coordinate is rejected by ``BufferSource``.
     """
     try:
-        coordinates = create_buffer_polygon(latitude=latitude, longitude=longitude, radius=radius)
+        candidate = BufferSource(radius_m=radius).find_by_point(latitude, longitude)[0]
+        return candidate_to_feature(candidate, latitude, longitude)
     except Exception as e:
         log_error(f"build_buffered_area: {e}")
         raise
-
-    return Feature(
-        feature_id=Feature.generate_id(),
-        coords=coordinates,
-        metadata=[
-            FeatureMetadata(key="radius", value=radius, unit="m"),
-            FeatureMetadata(key="center", value=f"{latitude}, {longitude}"),
-        ],
-        total_area=round(circle_area_hectares(radius), 2),
-        feature_type="buffer_area",
-    )

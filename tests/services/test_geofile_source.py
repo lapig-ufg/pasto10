@@ -1,4 +1,4 @@
-"""Tests of the geofile parser (domain/services/property_sources/geofile_source.py).
+"""Tests of the geofile parser (domain/services/geospatial/geofile.py).
 
 Offline: the shapefile and KML fixtures are written with geopandas in a temporary
 directory. The conversion itself is Semente's geo intake (the same code the
@@ -15,8 +15,9 @@ import pytest
 gpd = pytest.importorskip("geopandas")
 from shapely.geometry import MultiPolygon, Polygon  # noqa: E402
 
-from domain.services.property_sources import geofile_source  # noqa: E402
-from domain.services.property_sources.geofile_source import InvalidPolygon, parse_converted_geojson, parse_geofile  # noqa: E402
+from domain.services.geospatial import geofile as geofile_source  # noqa: E402
+from domain.services.geospatial.candidate import polygon_candidate_to_feature  # noqa: E402
+from domain.services.geospatial.geofile import InvalidPolygon, parse_converted_geojson, parse_geofile  # noqa: E402
 
 SQUARE = Polygon([(-47.51, -15.51), (-47.49, -15.51), (-47.49, -15.49), (-47.51, -15.49)])
 SECOND = Polygon([(-47.45, -15.45), (-47.43, -15.45), (-47.43, -15.43), (-47.45, -15.43)])
@@ -49,10 +50,10 @@ def _write_shapefile_zip(tmp_path: Path, geometries, name="farm") -> bytes:
 def test_a_geojson_feature_collection_becomes_one_rural_property():
     candidate = parse_geofile(_collection(_polygon_geojson(SQUARE)), "my farm.geojson")
 
-    assert candidate.origin.value == "rural_property" and candidate.source == "user"
+    assert candidate.origin.value == "user_polygon" and candidate.source == "user"
     assert candidate.name == "my farm" and candidate.area_ha > 400
-    assert {attribute.key: attribute.value for attribute in candidate.attributes}["source_file"] == "my farm.geojson"
-    assert candidate.to_feature().feature_type == "rural_property"
+    assert candidate.attributes["source_file"] == "my farm.geojson"
+    assert polygon_candidate_to_feature(candidate).feature_type == "rural_property"
 
 
 def test_several_polygons_are_united_into_one_property():
@@ -69,7 +70,7 @@ def test_a_zipped_shapefile_is_converted_and_registered(tmp_path):
 
     candidate = parse_geofile(content, "farm.zip")
 
-    assert candidate.origin.value == "rural_property" and candidate.name == "farm"
+    assert candidate.origin.value == "user_polygon" and candidate.attributes["feature_type"] == "rural_property" and candidate.name == "farm"
     assert candidate.area_ha > 400
 
 
@@ -83,14 +84,14 @@ def test_a_kml_is_converted_and_registered(tmp_path):
 
     candidate = parse_geofile(kml.read_bytes(), "farm.kml")
 
-    assert candidate.origin.value == "rural_property" and candidate.area_ha > 400
+    assert candidate.origin.value == "user_polygon" and candidate.attributes["feature_type"] == "rural_property" and candidate.area_ha > 400
 
 
 def test_a_converted_geojson_keeps_the_file_origin_and_name():
     candidate = parse_converted_geojson(_collection(_polygon_geojson(SQUARE)), "property.json")
 
-    assert candidate.origin.value == "rural_property" and candidate.name == "property"
-    assert candidate.to_feature().get_metadata("source_file") == "property.json"
+    assert candidate.origin.value == "user_polygon" and candidate.name == "property"
+    assert polygon_candidate_to_feature(candidate).get_metadata("source_file") == "property.json"
 
 
 @pytest.mark.parametrize("filename", ["farm.txt", "farm", "farm.pdf"], ids=["txt", "none", "pdf"])

@@ -9,13 +9,14 @@ from semente.configs.prompts import get_agent_config
 from domain import domain_spec
 from domain.agent import get_instructions, get_tools
 from domain.services.geospatial.geometry import build_buffered_area
-from domain.services.geospatial.transect import MAX_TOTAL_AREA_HA, MIN_TOTAL_AREA_HA, build_transect
 from domain.utils.feature_utils import set_registered_features, summarize_feature
 from domain.schemas.feature import FeatureMetadata, RegisteredFeatures
 
 STARTERS = {
-    "find_property_candidates", "find_property_by_registry_id", "register_polygon",
-    "start_buffer_registration_by_coordinate", "start_transect_registration_by_coordinates",
+    "start_buffer_registration_by_coordinate",
+    "start_buffer_registration_by_url",
+    "register_polygon",
+    "start_transect_registration_by_coordinates",
 }
 WEATHER_TOOLS = {
     "get_monthly_precipitation_forecast", "get_daily_precipitation_forecast", "get_rain_season_onset_forecast",
@@ -52,10 +53,9 @@ def test_domain_spec_wires_dynamic_callables():
     "registration_state, expected",
     [
         (None, {
-            "find_property_candidates", "find_property_by_registry_id", "register_polygon", "start_buffer_registration_by_coordinate", "start_transect_registration_by_coordinates", "generate_pasture_map", "get_pasture_area",
+            *STARTERS, "generate_pasture_map", "get_pasture_area",
             "generate_biomass_map", "get_biomass_total", "generate_biomass_video", *WEATHER_TOOLS, "generate_area_bulletin", *CALCULATOR_TOOLS,
         }),
-        ("choosing", {"select_candidate", "cancel_registration", *STARTERS}),
         ("pending", {"confirm_registration", "cancel_registration", *STARTERS}),
         ("final", {"complete_registration", "cancel_registration", *STARTERS}),
     ],
@@ -88,38 +88,35 @@ def test_feature_type_display_names_say_what_the_geometry_is():
     names = _agent_config["feature_type_names"]
 
     assert names["buffer_area"] == "approximate circular area (not a real property boundary)"
-    assert names["registered_boundary"] == "registered property boundary"
-    assert "may not be a farm" in names["osm_landuse"] and names["user_polygon"] == "user-provided polygon"
     assert names["rural_property"] == "rural property boundary (provided by the user)"
-    assert "transect" in names["transect"] and "not a property boundary" in names["transect"]
+    assert names["transect"] == "transect line (a sampling line, not a property boundary)"
+    assert set(names) == {"buffer_area", "rural_property", "transect"}
 
 
 def test_pending_instructions_switch_flows_in_the_same_reply_without_narrating_cancellations():
     pending = _agent_config["instructions_pending_single"]
 
     assert "different radius" in pending and "location" in pending
-    assert "call `start_buffer_registration_by_coordinate` with the new values right away" in pending
+    assert "call `start_buffer_registration_by_coordinate` (or `start_buffer_registration_by_url`" in pending
+    assert "with the new values right away" in pending
     assert "IN THE SAME REPLY" in pending and 'Never write "one moment"' in pending
     assert "do not narrate a cancellation" in pending and "CURRENT message" in pending
 
 
-@pytest.mark.parametrize("key", ["instructions_pending_single", "instructions_final", "instructions_choosing"])
+@pytest.mark.parametrize("key", ["instructions_pending_single", "instructions_final"])
 def test_every_registration_state_lets_the_user_switch_to_another_area(key):
     text = _agent_config[key]
 
-    for tool in (
-        "find_property_candidates", "register_polygon", "find_property_by_registry_id",
-        "start_buffer_registration_by_coordinate", "start_transect_registration_by_coordinates",
-    ):
-        assert tool in text
+    assert "start_buffer_registration_by_coordinate" in text
     assert "IN THE SAME REPLY" in text
 
 
 def test_default_instructions_call_tool_directly_and_convert_dms():
     default = _agent_config["instructions_default"]
 
-    assert "explicitly asks to register an approximate circle" in default
-    assert "right away" in default
+    assert "call `start_buffer_registration_by_coordinate` right away" in default
+    assert "call `register_polygon`" in default
+    assert "call `start_transect_registration_by_coordinates`" in default
     assert "|D| + M/60 + S/3600" in default
     assert "negative for S/W (or when D is already negative)" in default
     assert "Minutes may also come as decimals (e.g. 15°30.5'S)." in default
@@ -141,7 +138,7 @@ def test_default_instructions_hide_feature_ids_and_type_keys():
 
     assert "Never show feature IDs" in default
     assert "buffer_area" in default
-    assert "refer to areas by name, location, origin label and size (ha)" in default
+    assert "refer to areas by name, location, label and size (ha)" in default
 
 
 def test_final_instructions_without_candidate_use_fallback():
@@ -236,30 +233,40 @@ def test_biomass_rule_allows_stocking_capacity_only_through_the_skill():
     assert "never by multiplying a month by 12" in default
 
 
-def _transect():
-    return build_transect(-15.5, -47.5, -15.51, -47.51)
+@pytest.mark.parametrize("key", ["instructions_default", "instructions_pending_single", "instructions_final"])
+def test_every_state_routes_google_maps_links_to_the_url_tool(key):
+    text = _agent_config[key]
+
+    assert "start_buffer_registration_by_url" in text
+    assert "Google Maps" in text
+    assert "a map link" not in text and "from a name, an address or a link" not in text
+    assert "a link that is not from Google Maps" in text or key == "instructions_default"
 
 
-@pytest.mark.parametrize("registration_state", ["pending", "final"])
-def test_transect_states_use_the_transect_instructions(registration_state):
-    transect = _transect()
-    run_context = _context(registration_state=registration_state, candidate_properties=[transect.model_dump()])
-
-    instructions = get_instructions(run_context)
-
-    assert "Transect" in instructions or "transect" in instructions
-    assert "total area of the property" in instructions
-    if registration_state == "final":
-        assert str(MIN_TOTAL_AREA_HA) in instructions and str(int(MAX_TOTAL_AREA_HA)) in instructions
-    assert "buffer_area" not in instructions
-    assert transect.feature_id not in instructions
-    assert instructions.endswith(OUTPUT_CONTRACT)
-
-
-def test_default_instructions_describe_transects_and_their_limits():
+def test_default_instructions_call_the_url_tool_in_the_same_reply_without_permission():
     default = _agent_config["instructions_default"]
 
-    assert "start_transect_registration_by_coordinates" in default
-    assert "sampling line" in default
-    assert "total area of the property" in default
-    assert "generate_pasture_map" in default and "generate_biomass_map" in default
+    assert "call `start_buffer_registration_by_url` with the link exactly as sent, in the SAME reply" in default
+    assert "without asking for permission" in default
+    assert "GeoJSON" in default and "place name or address" in default
+    assert "a link that is not from Google Maps" in default
+
+
+def test_url_tool_texts_cover_every_failure():
+    from semente.configs.prompts import get_tool_description, get_tool_result_text
+
+    description = get_tool_description("property_tools", "start_buffer_registration_by_url")
+    assert "Google Maps" in description and "url (str)" in description
+    for key in ("no_coordinates", "unsupported_link", "link_unreachable", "invalid_radius", "invalid_coordinates", "error"):
+        text = get_tool_result_text(
+            "property_tools", "start_buffer_registration_by_url", key,
+            radius=5, min_radius=50, max_radius=1000, latitude=1, longitude=2, max_latitude=85,
+        )
+        assert text.strip() and "{" not in text
+
+
+@pytest.mark.parametrize("state", ["pending", "final"])
+def test_analysis_requests_while_an_area_is_pending_are_deferred_not_refused(state):
+    instructions = get_instructions(_context(registration_state=state, candidate_properties=[_candidate()]))
+
+    assert "ANALYSIS REQUESTS" in instructions and "do not say the feature is unavailable" in instructions

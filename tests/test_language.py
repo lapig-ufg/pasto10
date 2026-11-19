@@ -49,7 +49,7 @@ def test_technician_role_has_an_english_meaning():
     assert "technical advisor" in _persona_text({"user_persona": {"role": "Técnico"}})
 
 
-@pytest.mark.parametrize("state", [None, "pending", "final", "choosing"])
+@pytest.mark.parametrize("state", [None, "pending", "final"])
 def test_every_state_ends_with_the_language_rule(state):
     instructions = get_instructions(_context(registration_state=state, user_persona={"name": "Ana", "role": "Produtor"}))
 

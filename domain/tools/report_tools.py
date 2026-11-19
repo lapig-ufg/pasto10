@@ -3,7 +3,7 @@
 ``generate_area_bulletin`` consolidates the location, the pasture map and
 area and the biomass map and totals of a registered area into one shareable
 PDF. It reuses the existing services with the defaults of the pasture and
-biomass tools (pasture 2022, biomass of the latest annual year): the
+biomass tools (pasture 2022, biomass of the most recent data available for the area): the
 statistics come from the per-process cache (no new Earth Engine measurement),
 but the maps and basemap tiles are drawn again for every bulletin, which takes
 about 10-25 seconds. The tool is read-only with respect to ``session_state``. A section whose data fail is shown as "not
@@ -29,7 +29,7 @@ from domain.services.geospatial.basemap import resolve_providers
 from domain.services.geospatial.biomass import BiomassPeriodUnavailable, NoPastureBiomass, build_biomass, measure_biomass
 from domain.services.geospatial.biomass_image import render_biomass_map
 from domain.services.geospatial.gee import EarthEngineUnavailable
-from domain.services.geospatial.image import parse_center, render_buffer_image
+from domain.services.geospatial.image import parse_center, render_buffer_image, render_polygon_image
 from domain.services.geospatial.pasture import YearUnavailable, classify_pasture, measure_pasture_area
 from domain.services.geospatial.pasture_image import render_pasture_map
 from domain.utils.tool_utils import (
@@ -124,7 +124,7 @@ def _pasture_section(feature: Feature):
 
 
 def _biomass_section(feature: Feature):
-    """Computes the biomass stats and map with the defaults of ``generate_biomass_map`` (cached)."""
+    """Computes the biomass stats and map with the defaults of ``generate_biomass_map`` (the most recent data for the area, cached)."""
     biomass, roi = build_biomass(feature, None, None)
     stats = measure_biomass(biomass, roi)
     return stats, render_biomass_map(feature, biomass.image, stats).content
@@ -171,7 +171,11 @@ def generate_area_bulletin(run_context: RunContext, area_name: Optional[str] = N
             return ToolResult(content=_text("no_data", area_name=label))
 
         latitude, longitude = parse_center(feature)
-        location = render_buffer_image(feature)
+        location = (
+            render_polygon_image(feature)
+            if feature.feature_type == "rural_property"
+            else render_buffer_image(feature)
+        )
         attribution = "; ".join(provider.attribution.replace("\n", " ") for provider in resolve_providers()) if location.format == "jpeg" else ""
         pasture = sections.get("pasture")
         biomass = sections.get("biomass")
@@ -191,7 +195,7 @@ def generate_area_bulletin(run_context: RunContext, area_name: Optional[str] = N
         if pasture:
             summary.append(_text("summary_pasture", year=pasture[0].year, pasture_ha=pasture[0].pasture_ha, area_ha=pasture[0].area_ha))
         if biomass:
-            summary.append(_text("summary_biomass", period=biomass[0].period_label, mean_t_ha=biomass[0].mean_t_ha, total_t=biomass[0].total_t))
+            summary.append(_text("summary_biomass", period=biomass[0].period_label, source=biomass[0].source.value, mean_t_ha=biomass[0].mean_t_ha, total_t=biomass[0].total_t))
         missing = [key for key in ("pasture", "biomass") if key not in sections]
         if missing:
             content = _text("partial", area_name=label, file_name=name, summary="\n".join(summary), missing=", ".join(missing))

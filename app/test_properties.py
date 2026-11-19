@@ -18,7 +18,7 @@ _LOCKS_GUARD = threading.Lock()
 def session_lock(session_id: str) -> threading.RLock:
     """Returns the lock of one session (created on first use, under a short global guard).
 
-    Held while a direct registration or an uploaded GeoJSON writes the session store and while
+    Held while a direct registration writes the session store and while
     the workflow runs that session's turn (see ``app.frontend``), so those never interleave for
     the same session while different sessions never block each other. Locks are kept for the life
     of the process (one small object per session): this front end is a demo meant for a few
@@ -85,12 +85,9 @@ def fallback_prompt(item: dict) -> str:
 def register_test_property(item: dict, session_id: str) -> dict | None:
     """Registers a test property directly in the persisted session of a user.
 
-    Registers the synthetic demo registry parcel that contains the point of the property
-    (the first of ``DemoRegistrySource.find_by_point``, built with ``PropertyCandidate.to_feature``,
-    the same feature the ``select_candidate`` flow stores). When there is no parcel (the two
-    negative controls) it falls back to the buffer circle. The feature is named
-    ``"<property name> - <registry id>"`` (or just the property name for the circle) and is not
-    added twice.
+    Builds the buffer circle (radius ``radius_m`` of the property) around its point (the same feature
+    ``start_buffer_registration_by_coordinate`` stores) and names it after the property. A property
+    already registered under that name is not added twice.
 
     Args:
         item (dict): A test property (see ``load_test_properties``).
@@ -98,8 +95,7 @@ def register_test_property(item: dict, session_id: str) -> dict | None:
             ``user_id == session_id == st.session_state.session_id``, so it is also the store's user id.
 
     Returns:
-        dict | None: ``name``, ``area_ha``, ``registry_id`` (None for the circle) and ``demo``
-        (True for a registry parcel) of the registered property, or None when it was already registered.
+        dict | None: ``name`` and ``area_ha`` of the registered property, or None when it was already registered.
 
     Raises:
         PermissionError: When the test picker is not enabled (``picker_enabled``).
@@ -120,17 +116,10 @@ def register_test_property(item: dict, session_id: str) -> dict | None:
 
     from domain.schemas.feature import FeatureMetadata
     from domain.services.geospatial.geometry import build_buffered_area
-    from domain.services.property_sources.demo_registry_source import DemoRegistrySource
     from domain.utils.feature_utils import get_registered_features, set_registered_features
 
-    parcels = DemoRegistrySource().find_by_point(item["latitude"], item["longitude"])
-    registry_id = parcels[0].candidate_id if parcels else None
-    if parcels:
-        feature = parcels[0].to_feature()
-        name = f"{item['name']} - {registry_id}"
-    else:
-        feature = build_buffered_area(item["latitude"], item["longitude"], item["radius_m"])
-        name = item["name"]
+    name = item["name"]
+    feature = build_buffered_area(item["latitude"], item["longitude"], item["radius_m"])
 
     if not picker_enabled():
         raise PermissionError("The test picker is disabled (set APP_ENV=development or PASTO10_TEST_PICKER=1).")
@@ -159,4 +148,4 @@ def register_test_property(item: dict, session_id: str) -> dict | None:
             "communication_preferences": [],
         }
         store.save(session_id, session_id, session_state=state, runs=loaded["runs"])
-    return {"name": name, "area_ha": feature.total_area, "registry_id": registry_id, "demo": bool(parcels)}
+    return {"name": name, "area_ha": feature.total_area}

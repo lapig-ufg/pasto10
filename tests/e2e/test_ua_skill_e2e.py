@@ -44,7 +44,7 @@ def test_demand_with_protection_is_the_skill_value():
 @pytest.mark.parametrize("property_id", PROPERTY_IDS)
 def test_annual_capacity_is_plausible(property_id):
     item = _PROPERTIES[property_id]
-    stats = biomass.get_biomass_total(build_buffered_area(item.latitude, item.longitude, item.radius_m))
+    stats = biomass.get_biomass_total(build_buffered_area(item.latitude, item.longitude, item.radius_m), year=2024)
 
     total_au, per_ha = _capacity(stats.total_t, stats.pasture_ha)
 
@@ -58,7 +58,7 @@ def test_annual_capacity_is_plausible(property_id):
 def test_annualized_time2graze_stays_within_an_order_of_magnitude_of_the_annual_value(property_id):
     item = _PROPERTIES[property_id]
     feature = build_buffered_area(item.latitude, item.longitude, item.radius_m)
-    annual = biomass.get_biomass_total(feature)
+    annual = biomass.get_biomass_total(feature, year=2024)
     monthly = biomass.get_biomass_total(feature, month=7)
 
     annualized = monthly.total_t * 365 / monthly.days_covered

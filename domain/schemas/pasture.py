@@ -7,6 +7,7 @@ live in ``domain/services/geospatial/pasture.py``.
 """
 
 from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -43,6 +44,12 @@ class PastureAreaStats(BaseModel):
     natural_ha: float = Field(..., description="Natural and semi-natural grassland in hectares.", examples=[6.3])
 
     area_ha: float = Field(..., description="Total area covered by the analysis in hectares.", examples=[28.27])
+
+    requested_year: Optional[int] = Field(
+        default=None,
+        description="Year the user asked for when it is outside the coverage and `year` was used instead; None when served as asked.",
+        examples=[2100],
+    )
 
     @property
     def pasture_percent(self) -> float:

@@ -130,17 +130,17 @@ def test_confirm_buffer_area_shows_summary_and_radius_choice():
     _assert_user_facing_summary(result.content, feature_id)
     assert (
         "Mention that the radius is 300 m and that they can choose another radius "
-        "between 50 and 1000 m (default: 200 m)."
+        "between 50 and 1000 m (default: 500 m)."
     ) in result.content
 
 
-def test_default_radius_is_200_and_cited_in_confirmation():
+def test_default_radius_is_500_and_cited_in_confirmation():
     run_context = _context()
 
     result = _start(run_context)
 
-    assert _metadata(run_context.session_state["candidate_properties"][0])["radius"] == 200
-    assert "200 m" in result.content
+    assert _metadata(run_context.session_state["candidate_properties"][0])["radius"] == 500
+    assert "500 m" in result.content
 
 
 @pytest.mark.parametrize("radius", [50, 1000])
@@ -451,3 +451,103 @@ def test_summarize_feature_with_unknown_placeholder_uses_safe_summary(monkeypatc
     assert summary == feature_utils._safe_summary(feature, config)
     assert feature.id not in summary
     assert "buffer_area" not in summary
+
+
+@pytest.mark.parametrize("state", ["pending", "final"])
+def test_starting_a_buffer_replaces_a_pending_or_final_registration_silently(state):
+    run_context = _pending_context()
+    run_context.session_state["registration_state"] = state
+    first_id = run_context.session_state["candidate_properties"][0]["feature_id"]
+
+    result = _start(run_context, latitude=-33.0, longitude=-56.0, radius=1000)
+
+    assert run_context.session_state["registration_state"] == "pending"
+    candidates = run_context.session_state["candidate_properties"]
+    assert len(candidates) == 1 and candidates[0]["feature_id"] != first_id
+    assert "-33.0, -56.0" in result.content
+
+
+def test_cancel_registration_from_the_final_state_clears_the_candidate():
+    run_context = _pending_context()
+    property_tools.confirm_registration(run_context=run_context)
+    assert run_context.session_state["registration_state"] == "final"
+
+    property_tools.cancel_registration(run_context=run_context)
+
+    assert run_context.session_state["registration_state"] is None
+    assert run_context.session_state["candidate_properties"] == []
+
+
+def test_cancelled_text_points_to_the_buffer_tool_and_never_to_a_search():
+    content = property_tools.cancel_registration(run_context=_pending_context()).content
+
+    assert "start_buffer_registration_by_coordinate" in content
+    assert "search" not in content.lower()
+
+
+SQUARE_GEOJSON = {
+    "type": "Polygon",
+    "coordinates": [[
+        [-47.51, -15.51], [-47.49, -15.51], [-47.49, -15.49], [-47.51, -15.49], [-47.51, -15.51],
+    ]],
+}
+
+
+def test_register_polygon_pasted_geojson_creates_a_pending_rural_property():
+    import json
+
+    run_context = _context()
+
+    result = property_tools.register_polygon(run_context=run_context, geojson=json.dumps(SQUARE_GEOJSON))
+
+    assert result.images and "rural property boundary" in result.content
+    assert "476.59 ha" in result.content
+    assert "Feature ID" not in result.content and "rural_property" not in result.content
+    candidate = run_context.session_state["candidate_properties"][0]
+    assert candidate["feature_type"] == "rural_property"
+    assert _metadata(candidate)["center"].startswith("-15.5")
+    assert run_context.session_state["registration_state"] == "pending"
+
+
+def test_register_polygon_uses_an_attached_converted_geojson():
+    import json
+    from types import SimpleNamespace
+
+    run_context = _context()
+    attached = SimpleNamespace(name="farm.geojson", format="geojson", content=json.dumps(SQUARE_GEOJSON).encode())
+
+    result = property_tools.register_polygon(run_context=run_context, files=[attached])
+
+    assert result.images
+    candidate = run_context.session_state["candidate_properties"][0]
+    assert candidate["feature_type"] == "rural_property"
+    assert _metadata(candidate)["source_file"] == "farm.geojson"
+
+
+def test_register_polygon_reads_the_uploaded_geojson_once():
+    import json
+
+    run_context = _context(uploaded_geojson={"name": "property.geojson", "content": json.dumps(SQUARE_GEOJSON)})
+
+    result = property_tools.register_polygon(run_context=run_context)
+
+    assert result.images
+    assert "uploaded_geojson" not in run_context.session_state
+
+
+def test_register_polygon_without_a_boundary_asks_for_one():
+    run_context = _context()
+
+    result = property_tools.register_polygon(run_context=run_context)
+
+    assert not result.images and "no boundary" in result.content.lower()
+    assert "registration_state" not in run_context.session_state
+
+
+def test_register_polygon_rejects_invalid_geojson():
+    run_context = _context()
+
+    result = property_tools.register_polygon(run_context=run_context, geojson="not json")
+
+    assert not result.images and "could not be read" in result.content
+    assert "registration_state" not in run_context.session_state

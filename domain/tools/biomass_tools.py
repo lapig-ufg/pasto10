@@ -21,8 +21,10 @@ from domain.schemas.feature import Feature
 from domain.services.geospatial.biomass import (
     GPP_FIRST_YEAR,
     GPP_LAST_YEAR,
+    MAX_ANNUAL_FRAMES,
     BiomassPeriodUnavailable,
     NoPastureBiomass,
+    biomass_coverage,
     build_biomass,
     get_biomass_total as measure_total,
     measure_biomass,
@@ -75,8 +77,20 @@ def _period_notes(tool_key: str, feature: Feature, stats: BiomassStats, all_biom
     return notes
 
 
-def _success_text(tool_key: str, feature: Feature, stats: BiomassStats, all_biomass: bool = False) -> str:
-    """Renders the ``success`` text and the conditional notes for a measured area."""
+def _success_text(
+    tool_key: str, feature: Feature, stats: BiomassStats, latest: bool = False, all_biomass: bool = False,
+) -> str:
+    """Renders the ``success`` text and the conditional notes for a measured area.
+
+    ``latest`` is True when the user gave neither year nor month, so the
+    service chose the most recent data for the area: ``note_latest`` is added
+    for Time2Graze and ``note_latest_annual`` when the area has no Time2Graze
+    images and the latest annual year was used instead. ``note_period_adjusted``
+    goes first when ``stats.requested_label`` is set (the year or month asked was
+    outside the coverage): it gives the requested period, the period used and
+    the coverage. ``note_no_pasture_mask`` replaces ``note_mask_year`` when the
+    map was drawn from all biomass pixels.
+    """
     text = get_tool_result_text(
         _COMPONENT, tool_key, "success",
         area_name=area_label(feature), period=stats.period_label, source=stats.source.value,
@@ -85,6 +99,16 @@ def _success_text(tool_key: str, feature: Feature, stats: BiomassStats, all_biom
         pasture_percent=stats.pasture_percent, scale_m=stats.scale_m,
     )
     notes = area_notes(_COMPONENT, tool_key, feature, stats.area_ha)
+    if stats.requested_label is not None:
+        coverage = biomass_coverage()
+        notes.insert(0, get_tool_result_text(
+            _COMPONENT, tool_key, "note_period_adjusted", requested=stats.requested_label, period=stats.period_label,
+            source=stats.source.value, first_year=coverage.first_year, annual_last_year=coverage.annual_last_year,
+            t2g_range=f"{coverage.t2g_start} to {coverage.t2g_end}" if coverage.t2g_start else "not available",
+        ))
+    if latest:
+        key = "note_latest" if stats.source is BiomassSource.TIME2GRAZE else "note_latest_annual"
+        notes.append(get_tool_result_text(_COMPONENT, tool_key, key, period=stats.period_label, source=stats.source.value))
     notes += _period_notes(tool_key, feature, stats, all_biomass)
     return "\n".join([text, *notes])
 
@@ -118,9 +142,11 @@ def _handle_known_errors(error: Exception, tool_key: str, feature: Optional[Feat
         if error.kind == "month":
             return ToolResult(content=get_tool_result_text(
                 _COMPONENT, tool_key, "month_unavailable", t2g_start=error.first, t2g_end=error.last,
+                area_name=area_label(feature) if feature else "",
             ))
         return ToolResult(content=get_tool_result_text(
             _COMPONENT, tool_key, "year_unavailable", first_year=GPP_FIRST_YEAR, latest_year=GPP_LAST_YEAR,
+            area_name=area_label(feature) if feature else "",
         ))
     if isinstance(error, NoPastureBiomass):
         log_warning(f"{tool_key}: no productive pasture in the area")
@@ -142,21 +168,21 @@ def generate_biomass_map(
     Args:
         run_context (RunContext): The run context holding ``session_state`` (read only).
         area_name (str, optional): Name of the registered area; the latest registered area when omitted.
-        year (int, optional): Reference year; the latest Global Pasture Watch year when omitted.
-        month (int, optional): Month (1-12) of recent Time2Graze data.
+        year (int, optional): Reference year; with no year and no month, the most recent data available for the area
+            (0 counts as omitted). A year outside the coverage is replaced by the first or latest available year.
+        month (int, optional): Month (1-12) of recent Time2Graze data; outside the Time2Graze range it is replaced
+            by its first or last month. The result says when the period differs from the request.
 
     Returns:
         ToolResult: The ``success`` text (period, source, mean and total) plus
-        the map image (JPEG or PNG). When the area has no pasture mask the map
-        shows every positive biomass pixel of the area instead; only when there
-        is no biomass either does it return the ``no_registered_area``,
+        the map image (JPEG or PNG); or the ``no_registered_area``,
         ``area_not_found``, ``year_unavailable``, ``month_unavailable``,
-        ``no_pasture``, ``earth_engine_unavailable`` or ``error`` instructions
-        (no image).
+        ``no_pasture``, ``earth_engine_unavailable`` or ``error`` instructions (no image).
 
     Side effects:
         None on ``session_state``. Queries Earth Engine and downloads tiles.
     """
+    year, month = year or None, month or None
     tool_key = "generate_biomass_map"
     log_debug(f"{tool_key}: area_name={area_name!r}, year={year}, month={month}")
     feature = None
@@ -178,7 +204,10 @@ def generate_biomass_map(
             all_biomass = True
         rendered = render_biomass_map(feature, biomass.image, stats)
         image = Image(content=rendered.content, format=rendered.format, mime_type=rendered.mime_type)
-        return ToolResult(content=with_note(_success_text(tool_key, feature, stats, all_biomass), latest_area_note(run_context, area_name, feature)), images=[image])
+        return ToolResult(content=with_note(
+            _success_text(tool_key, feature, stats, year is None and month is None, all_biomass),
+            latest_area_note(run_context, area_name, feature),
+        ), images=[image])
     except Exception as error:
         return _handle_known_errors(error, tool_key, feature)
 
@@ -192,8 +221,10 @@ def get_biomass_total(
     Args:
         run_context (RunContext): The run context holding ``session_state`` (read only).
         area_name (str, optional): Name of the registered area; the latest registered area when omitted.
-        year (int, optional): Reference year; the latest Global Pasture Watch year when omitted.
-        month (int, optional): Month (1-12) of recent Time2Graze data.
+        year (int, optional): Reference year; with no year and no month, the most recent data available for the area
+            (0 counts as omitted). A year outside the coverage is replaced by the first or latest available year.
+        month (int, optional): Month (1-12) of recent Time2Graze data; outside the Time2Graze range it is replaced
+            by its first or last month. The result says when the period differs from the request.
 
     Returns:
         ToolResult: The ``success`` text (period, source, mean t DM/ha and total
@@ -204,6 +235,7 @@ def get_biomass_total(
     Side effects:
         None on ``session_state``. Queries Earth Engine.
     """
+    year, month = year or None, month or None
     tool_key = "get_biomass_total"
     log_debug(f"{tool_key}: area_name={area_name!r}, year={year}, month={month}")
     feature = None
@@ -212,7 +244,9 @@ def get_biomass_total(
         if failure is not None:
             return failure
         stats = measure_total(feature, year, month)
-        text = _transect_success_text(tool_key, feature, stats) if feature.feature_type == "transect" else _success_text(tool_key, feature, stats)
+        text = _transect_success_text(tool_key, feature, stats) if feature.feature_type == "transect" else _success_text(
+            tool_key, feature, stats, year is None and month is None,
+        )
         return ToolResult(content=with_note(text, latest_area_note(run_context, area_name, feature)))
     except Exception as error:
         return _handle_known_errors(error, tool_key, feature)
@@ -230,7 +264,8 @@ def generate_biomass_video(run_context: RunContext, area_name: Optional[str] = N
     Args:
         run_context (RunContext): The run context holding ``session_state`` (read only).
         area_name (str, optional): Name of the registered area; the latest registered area when omitted.
-        years (int, optional): Number of annual frames for the fallback (2 to 12, default 10).
+        years (int, optional): Number of annual frames for the fallback (2 to 12, default 10); a value outside
+            that range is adjusted and the result says so.
 
     Returns:
         ToolResult: ``success_monthly`` or ``success_annual_fallback`` (mode, frames,
@@ -259,6 +294,11 @@ def generate_biomass_video(run_context: RunContext, area_name: Optional[str] = N
             labels=", ".join(video.frames), vmin=video.vmin, vmax=video.vmax, duration=video.duration,
             reason_text=get_tool_result_text(_COMPONENT, tool_key, f"fallback_reason_{video.reason}") if video.mode != "monthly" else "",
         )
+        if years and video.mode != "monthly" and not 2 <= years <= MAX_ANNUAL_FRAMES:
+            content = with_note(content, get_tool_result_text(
+                _COMPONENT, tool_key, "note_years_adjusted", requested=years, used=len(video.frames),
+                min_years=2, max_years=MAX_ANNUAL_FRAMES,
+            ))
         media = Video(
             content=video.content, format=video.format, mime_type=video.mime_type, duration=video.duration,
             width=video.width, height=video.height, fps=video.fps,

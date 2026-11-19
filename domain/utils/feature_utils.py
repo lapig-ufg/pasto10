@@ -67,17 +67,17 @@ def _safe_summary(feature: Feature, config: dict) -> str:
 
 
 def _polygon_summary(feature: Feature, config: dict) -> str:
-    """Builds the summary of a polygon feature (registered boundary, land-use polygon or user polygon).
+    """Builds the summary of a polygon feature provided by the user (a rural property).
 
     Uses the ``polygon_summary`` template with the origin label (``feature_type_names``), the optional source
     name, the area and the center; falls back to the safe summary when the template or the center is unusable.
 
     Args:
-        feature (Feature): A feature with ``origin`` and ``center`` metadata.
+        feature (Feature): A feature with ``center`` metadata.
         config (dict): The ``single_agent`` prompt config.
 
     Returns:
-        str: E.g. ``"OpenStreetMap land-use polygon (may not be a farm) · Santa Rita · Area: 41.2 ha · Location: ..."``.
+        str: E.g. ``"rural property boundary (provided by the user) · Farm · Area: 41.2 ha · Location: ..."``.
     """
     template = config.get("polygon_summary")
     label = str((config.get("feature_type_names") or {}).get(feature.feature_type) or config.get("feature_type_fallback") or "area").strip()
@@ -88,7 +88,7 @@ def _polygon_summary(feature: Feature, config: dict) -> str:
             origin_label=label, name=f" · {source_name}" if source_name else "", area=feature.total_area,
             latitude=latitude, longitude=longitude,
         )
-    except (KeyError, ValueError, IndexError):
+    except (KeyError, ValueError, IndexError, TypeError):
         return _safe_summary(feature, config)
 
 
@@ -146,10 +146,10 @@ def summarize_feature(feature: Feature) -> str:
     config = get_agent_config("single_agent") or {}
     if feature.feature_type == "transect":
         return _transect_summary(feature, config)
+    if feature.feature_type == "rural_property" and feature.get_metadata("center") is not None:
+        return _polygon_summary(feature, config)
     center = feature.get_metadata("center")
     radius = feature.get_metadata("radius")
-    if feature.get_metadata("origin") not in (None, "approximate_circle") and center is not None:
-        return _polygon_summary(feature, config)
     template = config.get("candidate_summary")
     if center is None or radius is None or feature.total_area is None or not template:
         return _safe_summary(feature, config)

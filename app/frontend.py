@@ -14,9 +14,6 @@ Wrapped behaviours:
       other parts of the front end inject a message into the conversation.
     - ``st.selectbox`` over stored users shows the ``nickname`` that Semente saves
       (Semente reads a key that does not exist and lists everybody as "User").
-    - ``st.file_uploader`` also accepts geospatial files (shapefile .zip/.rar,
-      KMZ, KML and GeoJSON); they are passed to Semente's input step, which
-      converts them to GeoJSON for the registration tool.
     - The "Debug Mode" toggle is shown only with ``APP_ENV=development`` set explicitly.
     - ``Harness.run`` holds the per-session lock, so direct registrations never race an agent turn of
       the same session.
@@ -40,6 +37,7 @@ _EXTRA_UPLOAD_TYPES = ["geojson", "json", "zip", "rar", "kmz", "kml"]
 _GEO_EXTENSIONS = tuple(f".{extension}" for extension in _EXTRA_UPLOAD_TYPES)
 _GEOFILE_KEY = "_pending_geofile"
 
+# The Portuguese upload key is the exact label of Semente 0.4.1 (lookup key only; the output is English).
 LABELS = {
     "Login": "Sign in",
     "Log In": "Sign in",
@@ -48,7 +46,7 @@ LABELS = {
     "User identification": "Your name or nickname",
     "Log In Anonymously": "Continue anonymously",
     "Log Out / Switch User": "Sign out / Switch user",
-    "Upload images/audio (png, jpg, mp3, etc)": "Upload images, audio or a shapefile/KML/GeoJSON boundary",
+    "Envie imagens/áudio/mapas (png, jpg, mp3, zip, kmz, kml, geojson, etc)": "Upload images, audio or a shapefile/KML/GeoJSON boundary",
     "Type your message...": "Ask about pastures...",
     "Analyzing data and generating response...": "Analyzing data and generating the answer...",
     "Error": "Sorry, I could not produce an answer. Please try again.",
@@ -139,7 +137,7 @@ def _file_uploader(original):
     translating = _translating(original)
 
     def wrapper(label, *args, **kwargs):
-        from domain.services.property_sources.geofile_source import max_geofile_bytes
+        from domain.services.geospatial.geofile import max_geofile_bytes
 
         types = kwargs.get("type")
         if types is not None:
@@ -197,7 +195,7 @@ def _inspect_geojson(raw: bytes):
 
     Reuses ``MAX_CONVERTED_BYTES``, ``raw_vertex_count`` (iterative, bounded depth, finite
     lon/lat, rings and vertex limits) and the NaN/Infinity rejection of
-    ``user_polygon_source``, with the geofile vertex limit (a real property file is much
+    ``polygon_input``, with the geofile vertex limit (a real property file is much
     larger than a pasted polygon). Never raises: any failure, including a ``RecursionError``
     from deeply nested JSON, becomes a problem text.
 
@@ -207,8 +205,8 @@ def _inspect_geojson(raw: bytes):
     Returns:
         str | None: A user-facing reason (None when the file can be sent to the assistant).
     """
-    from domain.services.property_sources import geofile_source as geofiles
-    from domain.services.property_sources import user_polygon_source as source
+    from domain.services.geospatial import geofile as geofiles
+    from domain.services.geospatial import polygon_input as source
 
     try:
         if len(raw) > geofiles.MAX_CONVERTED_BYTES:
@@ -218,7 +216,7 @@ def _inspect_geojson(raw: bytes):
         vertices = source.raw_vertex_count(geometries, geofiles.max_geofile_vertices())
         if vertices > geofiles.max_geofile_vertices():
             return f"this polygon has too many vertices (the limit is {geofiles.max_geofile_vertices():,}) and was ignored. Simplify it and try again."
-        if not any(isinstance(g, dict) and g.get("type") in ("Polygon", "MultiPolygon") for g in geometries):
+        if not any(isinstance(geometry, dict) and geometry.get("type") in ("Polygon", "MultiPolygon") for geometry in geometries):
             return "no polygon was found in this file and it was ignored."
         return None
     except source.InvalidPolygon as error:
@@ -232,8 +230,7 @@ def _chat_input(original):
 
     Returns:
         The injected ``st.session_state["_pending_prompt"]`` (consumed once) when set,
-        otherwise what the user typed, followed by a one-line note when a geospatial file
-        is attached (the content itself never goes into the message).
+        otherwise what the user typed.
     """
     translating = _translating(original)
 
@@ -269,14 +266,13 @@ def _toggle(original):
 
 
 def _locked_run(original):
-    """Wraps ``Harness.run``: per-session lock.
+    """Wraps ``Harness.run``: holds the per-session lock for the whole turn.
 
     ``Harness.run`` is synchronous (it returns the final output; ``stream=True`` is ignored by
-    Semente), so holding the lock for the call covers the whole agent turn. The geospatial
-    files themselves are forwarded by Semente's web app and converted by its input step.
+    Semente), so holding the lock for the call covers the whole agent turn.
 
     Side effects:
-        Holds ``session_lock(session_id)``.
+        Holds ``session_lock(session_id)`` during the call.
     """
 
     def wrapper(self, *args, **kwargs):

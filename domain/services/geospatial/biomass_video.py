@@ -51,7 +51,7 @@ from domain.services.geospatial.image import (
     parse_center,
     project_ring,
 )
-from domain.services.geospatial.pasture_image import blend_overlay, draw_outline, mercator_bounds
+from domain.services.geospatial.pasture_image import blend_overlay, clip_overlay, draw_outline, mercator_bounds
 from domain.utils.cache_utils import SingleFlightCache
 
 MAX_FRAMES = 24
@@ -238,7 +238,7 @@ def render_frames(
 
     frames = []
     for plan, layer in zip(plans, overlays):
-        image = blend_overlay(background, layer)
+        image = blend_overlay(background, clip_overlay(layer, ring))
         image = draw_outline(image, ring)
         image = draw_center_marker(image, (size[0] / 2, size[1] / 2))
         image = draw_scale_bar(image, mpp)

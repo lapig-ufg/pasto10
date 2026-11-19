@@ -1,4 +1,4 @@
-"""Polygon helpers shared by the property sources (shapely, no projection library).
+"""Polygon helpers shared by the geospatial services (shapely, no projection library).
 
 Areas are computed in a Lambert azimuthal equal-area projection centered on the
 polygon, implemented here directly, so no ``pyproj`` is needed. Distances use
@@ -10,7 +10,7 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points
 
 from domain.services.geospatial.geometry import haversine_distance
-from domain.services.property_sources.geometry_core import (  # noqa: F401  (re-exported)
+from domain.services.geospatial.geometry_core import (  # noqa: F401  (re-exported)
     EARTH_RADIUS_METERS,
     GeometryTooComplex,
     area_hectares,

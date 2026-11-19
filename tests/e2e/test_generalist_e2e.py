@@ -142,8 +142,8 @@ def test_tools_over_global_properties(item):
     if item.is_control:
         assert official.pasture_ha <= 0.02 * official.area_ha
         assert estimate.pasture_ha <= 0.10 * estimate.area_ha
-    assert f"{official.pasture_ha} ha" in text.content and "Global Pasture Watch" in text.content
-    assert f"{official.pasture_ha} ha" in result.content
+    assert f"{official.pasture_ha:.1f} ha" in text.content and "Global Pasture Watch" in text.content
+    assert f"{official.pasture_ha:.1f} ha" in result.content
     assert result.images and Image.open(BytesIO(result.images[0].content)).size == (640, 640)
     assert context.session_state == registered
     out = os.getenv("PASTO10_E2E_OUT")
