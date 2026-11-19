@@ -112,16 +112,41 @@ def feature_geometry(feature: Feature) -> "ee.Geometry":
     """Converts a registered feature into an Earth Engine geometry.
 
     Args:
-        feature (Feature): Feature whose coords are GeoJSON MultiPolygon nesting.
+        feature (Feature): Feature whose coords are GeoJSON MultiPolygon
+            nesting or a LineString (transect).
 
     Returns:
-        ee.Geometry: Planar (non-geodesic) MultiPolygon in EPSG:4326.
+        ee.Geometry: Planar (non-geodesic) MultiPolygon or LineString in
+        EPSG:4326.
 
     Raises:
         EarthEngineUnavailable: If Earth Engine cannot be initialized.
     """
     initialize_ee()
+    if feature.is_line:
+        return ee.Geometry.LineString(feature.get_coords(), proj="EPSG:4326", geodesic=False)
     return ee.Geometry.MultiPolygon(feature.get_coords(), proj="EPSG:4326", geodesic=False)
+
+
+def transect_corridor(feature: Feature, scale: float, base: Optional["ee.Geometry"] = None) -> "ee.Geometry":
+    """Returns the sampling corridor around a transect line.
+
+    The line is buffered by half the native analysis scale, so the corridor is
+    about one pixel wide (15 m for 30 m data, 5 m for 10 m data).
+
+    Args:
+        feature (Feature): Transect feature.
+        scale (float): Native resolution of the data in meters.
+        base (ee.Geometry, optional): The line geometry, when already built.
+
+    Returns:
+        ee.Geometry: The buffered line.
+
+    Raises:
+        EarthEngineUnavailable: If Earth Engine cannot be initialized.
+    """
+    geometry = base if base is not None else feature_geometry(feature)
+    return geometry.buffer(max(1.0, scale / 2.0))
 
 
 def _latest_embedding_year(roi: "ee.Geometry") -> Optional[int]:
@@ -388,8 +413,10 @@ def classify_pasture(feature: Feature, year: Optional[int] = None) -> tuple[Past
             outside the coverage is clamped (see ``resolve_year``).
 
     Returns:
-        tuple: (PastureClassification, the area as ee.Geometry). For years
-        after ``GPW_LAST_YEAR`` the area's forest is trained here the first time.
+        tuple: (PastureClassification, the area as ee.Geometry). For a
+        transect, the returned geometry is the sampling corridor (the line
+        buffered by half the analysis scale). For years after
+        ``GPW_LAST_YEAR`` the area's forest is trained here the first time.
         ``requested_year`` is set when the year was adjusted.
 
     Raises:
@@ -399,6 +426,8 @@ def classify_pasture(feature: Feature, year: Optional[int] = None) -> tuple[Past
     roi = feature_geometry(feature)
     resolved = resolve_year(roi, year, geometry_key(feature))
     classification = _build_classification(feature, roi, resolved, adjusted_year(year, resolved))
+    if feature.is_line:
+        roi = transect_corridor(feature, classification.scale, base=roi)
     log_debug(f"classify_pasture: year={classification.year}, source={classification.source.name}")
     return classification, roi
 
@@ -469,8 +498,42 @@ def measure_pasture_area(classification: PastureClassification, roi: "ee.Geometr
     return _with_requested(stats, classification.requested_year)
 
 
+def _extrapolate_pasture(sampled: PastureAreaStats, total_area_ha: float) -> PastureAreaStats:
+    """Scales a transect corridor measurement to the property's total area.
+
+    The shares of pasture, cultivated and natural grassland measured in the
+    corridor are multiplied by ``total_area_ha``. The resulting ``area_ha`` is
+    the property total, so ``pasture_percent`` remains the mean share found
+    along the transect. ``requested_year`` (and the year and source) are kept.
+
+    Args:
+        sampled (PastureAreaStats): Corridor measurement (``area_ha`` is the corridor area).
+        total_area_ha (float): Total area of the property in hectares.
+
+    Returns:
+        PastureAreaStats: Property-level estimate with ``area_ha = total_area_ha``.
+    """
+    if sampled.area_ha <= 0:
+        return sampled.model_copy(update={
+            "pasture_ha": 0.0, "cultivated_ha": 0.0, "natural_ha": 0.0,
+            "area_ha": round(total_area_ha, 2),
+        })
+    factor = total_area_ha / sampled.area_ha
+    cultivated = round(sampled.cultivated_ha * factor, 2)
+    natural = round(sampled.natural_ha * factor, 2)
+    return sampled.model_copy(update={
+        "pasture_ha": round(cultivated + natural, 2),
+        "cultivated_ha": cultivated,
+        "natural_ha": natural,
+        "area_ha": round(total_area_ha, 2),
+    })
+
+
 def get_pasture_area(feature: Feature, year: Optional[int] = None) -> PastureAreaStats:
     """Measures the pasture area of a registered area for a year.
+
+    For a transect, the line corridor is measured and its pasture share is
+    extrapolated to the property's total area (``feature.total_area``).
 
     The caches (memory, then disk when enabled) are consulted before the
     class image is built, so repeating a call for the same geometry and year
@@ -492,6 +555,10 @@ def get_pasture_area(feature: Feature, year: Optional[int] = None) -> PastureAre
         YearUnavailable: If the collection lacks an image for a year inside its coverage.
         Exception: Any Earth Engine computation error.
     """
+    if feature.is_line:
+        classification, corridor = classify_pasture(feature, year)
+        return _extrapolate_pasture(measure_pasture_area(classification, corridor), feature.total_area)
+
     roi = feature_geometry(feature)
     geom_key = geometry_key(feature)
     resolved = resolve_year(roi, year, geom_key)

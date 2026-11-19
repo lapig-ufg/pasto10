@@ -12,7 +12,12 @@ from domain.services.geospatial.geometry import build_buffered_area
 from domain.utils.feature_utils import set_registered_features, summarize_feature
 from domain.schemas.feature import FeatureMetadata, RegisteredFeatures
 
-STARTERS = {"start_buffer_registration_by_coordinate", "start_buffer_registration_by_url"}
+STARTERS = {
+    "start_buffer_registration_by_coordinate",
+    "start_buffer_registration_by_url",
+    "register_polygon",
+    "start_transect_registration_by_coordinates",
+}
 WEATHER_TOOLS = {
     "get_monthly_precipitation_forecast", "get_daily_precipitation_forecast", "get_rain_season_onset_forecast",
     "get_dry_season_onset_forecast", "get_temperature_forecast",
@@ -83,7 +88,9 @@ def test_feature_type_display_names_say_what_the_geometry_is():
     names = _agent_config["feature_type_names"]
 
     assert names["buffer_area"] == "approximate circular area (not a real property boundary)"
-    assert set(names) == {"buffer_area"}
+    assert names["rural_property"] == "rural property boundary (provided by the user)"
+    assert names["transect"] == "transect line (a sampling line, not a property boundary)"
+    assert set(names) == {"buffer_area", "rural_property", "transect"}
 
 
 def test_pending_instructions_switch_flows_in_the_same_reply_without_narrating_cancellations():
@@ -108,7 +115,8 @@ def test_default_instructions_call_tool_directly_and_convert_dms():
     default = _agent_config["instructions_default"]
 
     assert "call `start_buffer_registration_by_coordinate` right away" in default
-    assert "only circular areas around a coordinate are supported" in default
+    assert "call `register_polygon`" in default
+    assert "call `start_transect_registration_by_coordinates`" in default
     assert "|D| + M/60 + S/3600" in default
     assert "negative for S/W (or when D is already negative)" in default
     assert "Minutes may also come as decimals (e.g. 15°30.5'S)." in default

@@ -61,6 +61,23 @@ def lookup_area(
     return feature, None
 
 
+def transect_not_supported(feature: Feature, component: str, tool_key: str) -> Optional[ToolResult]:
+    """Returns the tool result that explains a tool cannot analyze a transect line.
+
+    Args:
+        feature (Feature): The resolved registered feature.
+        component (str): Tool group in ``tools.yml`` (e.g. ``pasture_tools``).
+        tool_key (str): Tool name under ``component``.
+
+    Returns:
+        ToolResult | None: The ``not_available_for_transect`` instructions for a
+        transect, or None for every other feature type.
+    """
+    if feature.feature_type != "transect":
+        return None
+    return ToolResult(content=get_tool_result_text(component, tool_key, "not_available_for_transect"))
+
+
 def area_label(feature: Feature) -> str:
     """Returns the display name of an area, or the generic type name (``feature_type_fallback``) when unnamed.
 

@@ -442,9 +442,14 @@ def _coverage_image(biomass: "ee.Image", mask_year: int) -> "ee.Image":
     return ee.Image.cat([grass.rename("grass"), grass.And(biomass.mask()).rename("covered")])
 
 
-def _mask_biomass(biomass: "ee.Image", mask_year: int) -> "ee.Image":
-    """Masks a biomass image to the Global Pasture Watch grassland of ``mask_year`` and positive values."""
-    return biomass.updateMask(_mask_image(mask_year).And(biomass.gt(0)))
+def _mask_biomass(biomass: "ee.Image", mask_year: int, roi: "ee.Geometry") -> "ee.Image":
+    """Masks a biomass image to the grassland of ``mask_year``, positive values and ``roi``."""
+    return biomass.updateMask(_mask_image(mask_year).And(biomass.gt(0))).clip(roi)
+
+
+def _all_biomass(biomass: "ee.Image", roi: "ee.Geometry") -> "ee.Image":
+    """Masks a biomass image to its positive values and to ``roi`` (no pasture mask)."""
+    return biomass.updateMask(biomass.gt(0)).clip(roi)
 
 
 def _stats_key(geom_key: str, period: BiomassPeriod) -> tuple:
@@ -499,7 +504,9 @@ def _period_for(feature: Feature, roi: "ee.Geometry", year: Optional[int], month
     return period
 
 
-def build_biomass(feature: Feature, year: Optional[int] = None, month: Optional[int] = None) -> tuple[BiomassImage, "ee.Geometry"]:
+def build_biomass(
+    feature: Feature, year: Optional[int] = None, month: Optional[int] = None, mask_to_pasture: bool = True,
+) -> tuple[BiomassImage, "ee.Geometry"]:
     """Builds the productivity image of an area for a period.
 
     Args:
@@ -508,20 +515,36 @@ def build_biomass(feature: Feature, year: Optional[int] = None, month: Optional[
         month (int | None): Requested month (1-12), served by Time2Graze. Without
             year and month the most recent data available for the area is used
             (see ``resolve_latest_period``).
+        mask_to_pasture (bool): Mask to the Global Pasture Watch grassland and
+            positive values (default). When False, keep every positive biomass
+            pixel of the area (used by the map when the area has no pasture).
 
     Returns:
-        tuple: (BiomassImage, the area as ee.Geometry). Pixels outside the
-        Global Pasture Watch grassland mask or without productivity are masked.
+        tuple: (BiomassImage, the area as ee.Geometry). For a transect, the
+        returned geometry is the sampling corridor (the line buffered by half
+        the analysis scale). The image is clipped to the area; pixels outside
+        the Global Pasture Watch grassland mask or without productivity are
+        masked, unless ``mask_to_pasture`` is False (then only pixels without
+        productivity are masked).
 
     Raises:
         EarthEngineUnavailable: If Earth Engine cannot be initialized.
         BiomassPeriodUnavailable: If the period has no data for the area.
     """
-    roi = pasture.feature_geometry(feature)
-    return _build_image(feature, roi, _period_for(feature, roi, year, month)), roi
+    base_roi = pasture.feature_geometry(feature)
+    roi = (
+        pasture.transect_corridor(feature, pasture.GPW_SCALE_METERS, base=base_roi)
+        if feature.is_line else base_roi
+    )
+    period = _period_for(feature, roi, year, month)
+    if feature.is_line:
+        roi = pasture.transect_corridor(feature, period.scale, base=base_roi)
+    return _build_image(feature, roi, period, mask_to_pasture=mask_to_pasture), roi
 
 
-def _build_image(feature: Feature, roi: "ee.Geometry", period: BiomassPeriod) -> BiomassImage:
+def _build_image(
+    feature: Feature, roi: "ee.Geometry", period: BiomassPeriod, mask_to_pasture: bool = True,
+) -> BiomassImage:
     """Builds the masked productivity image of a resolved period.
 
     Raises:
@@ -536,10 +559,20 @@ def _build_image(feature: Feature, roi: "ee.Geometry", period: BiomassPeriod) ->
         biomass = _t2g_biomass(roi, period)
     else:
         biomass = _gpp_biomass(period.year)
-    image = _mask_biomass(biomass, period.mask_year)
-    coverage = _coverage_image(biomass, period.mask_year) if period.source is BiomassSource.TIME2GRAZE else None
-    log_debug(f"build_biomass: period={period.label}, source={period.source.name}")
-    return BiomassImage(image, period, n_images, _stats_key(pasture.geometry_key(feature), period), coverage)
+    image = (
+        _mask_biomass(biomass, period.mask_year, roi)
+        if mask_to_pasture else _all_biomass(biomass, roi)
+    )
+    coverage = (
+        _coverage_image(biomass, period.mask_year)
+        if mask_to_pasture and period.source is BiomassSource.TIME2GRAZE
+        else None
+    )
+    key = _stats_key(pasture.geometry_key(feature), period)
+    if not mask_to_pasture:
+        key += ("all-biomass",)
+    log_debug(f"build_biomass: period={period.label}, source={period.source.name}, pasture_mask={mask_to_pasture}")
+    return BiomassImage(image, period, n_images, key, coverage)
 
 
 def _disk_cache() -> DiskCache:
@@ -606,8 +639,35 @@ def measure_biomass(biomass: BiomassImage, roi: "ee.Geometry") -> BiomassStats:
     return _with_requested(stats, period.requested_label)
 
 
+def _extrapolate_biomass(sampled: BiomassStats, total_area_ha: float) -> BiomassStats:
+    """Scales a transect corridor measurement to the property's total area.
+
+    The mean dry-matter production measured in the corridor is multiplied by
+    ``total_area_ha``. The productive-pasture share of the corridor scales the
+    reported pasture area to the same total, so ``pasture_percent`` remains
+    the mean share found along the transect. ``requested_label`` (and the
+    period and source) are kept.
+
+    Args:
+        sampled (BiomassStats): Corridor measurement (``area_ha`` is the corridor area).
+        total_area_ha (float): Total area of the property in hectares.
+
+    Returns:
+        BiomassStats: Property-level estimate with ``area_ha = total_area_ha``.
+    """
+    factor = total_area_ha / sampled.area_ha if sampled.area_ha > 0 else 0.0
+    return sampled.model_copy(update={
+        "total_t": round(sampled.mean_t_ha * total_area_ha, 2),
+        "pasture_ha": round(sampled.pasture_ha * factor, 2),
+        "area_ha": round(total_area_ha, 2),
+    })
+
+
 def get_biomass_total(feature: Feature, year: Optional[int] = None, month: Optional[int] = None) -> BiomassStats:
     """Measures the dry-matter production of a registered area for a period.
+
+    For a transect, the line corridor is measured and its mean production is
+    extrapolated to the property's total area (``feature.total_area``).
 
     The caches are consulted before the image is built; period resolution may
     query Earth Engine (the Time2Graze range is cached for a day).
@@ -629,6 +689,10 @@ def get_biomass_total(feature: Feature, year: Optional[int] = None, month: Optio
         Exception: Any Earth Engine computation error.
     """
     initialize_ee()
+    if feature.is_line:
+        biomass, roi = build_biomass(feature, year, month)
+        return _extrapolate_biomass(measure_biomass(biomass, roi), feature.total_area)
+
     period = _period_for(feature, pasture.feature_geometry(feature), year, month)
     key = _stats_key(pasture.geometry_key(feature), period)
     cached = _stats_cache.peek(key) or _load_stats(key)
@@ -743,7 +807,7 @@ def _monthly_frame(feature: Feature, roi: "ee.Geometry", period: BiomassPeriod, 
     calendar_days = calendar.monthrange(period.year, period.month)[1]
     raw = _t2g_biomass(roi, period, calendar_days)
     key = _stats_key(pasture.geometry_key(feature), period) + ("monthly-equivalent",)
-    frame_image = BiomassImage(_mask_biomass(raw, period.mask_year), period, n_images, key, _coverage_image(raw, period.mask_year))
+    frame_image = BiomassImage(_mask_biomass(raw, period.mask_year, roi), period, n_images, key, _coverage_image(raw, period.mask_year))
     return BiomassFrame(period.label + ("*" if period.partial else ""), frame_image, period.partial)
 
 

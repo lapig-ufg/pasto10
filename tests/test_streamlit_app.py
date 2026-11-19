@@ -236,12 +236,42 @@ def test_chat_input_returns_the_typed_text_and_the_pending_prompt_once(monkeypat
     state["_pending_prompt"] = "hello"
     assert _chat_input(lambda *args, **kwargs: None)("Ask") == "hello"
     assert "_pending_prompt" not in state
+    state["_pending_geofile"] = {"name": "farm.geojson", "format": "geojson"}
+    assert _chat_input(lambda *args, **kwargs: "register")("Ask") == "register\n\n[Geospatial file attached: farm.geojson]"
 
 
-def test_front_end_has_no_geojson_upload():
-    from app import frontend
+def test_front_end_has_a_geofile_uploader(monkeypatch):
+    import streamlit as st
 
-    assert not hasattr(frontend, "_file_uploader") and not hasattr(frontend, "_inspect_geojson")
+    from app.frontend import _file_uploader, _inspect_geojson
+
+    state, warnings = {}, []
+    monkeypatch.setattr(st, "session_state", state)
+    monkeypatch.setattr(st, "warning", lambda message, *args, **kwargs: warnings.append(message))
+
+    class Upload:
+        def __init__(self, name, content):
+            self.name, self._content = name, content
+
+        def getvalue(self):
+            return self._content
+
+    good = Upload("farm.geojson", json.dumps({
+        "type": "Feature",
+        "properties": {},
+        "geometry": {"type": "Polygon", "coordinates": [[[-47.5, -15.5], [-47.4, -15.5], [-47.4, -15.4], [-47.5, -15.4], [-47.5, -15.5]]]},
+    }).encode())
+    photo = Upload("photo.png", b"png")
+    seen = {}
+    wrapper = _file_uploader(lambda *args, **kwargs: seen.update(args=args, kwargs=kwargs) or [good, photo])
+
+    kept = wrapper("Envie imagens/áudio/mapas (png, jpg, mp3, zip, kmz, kml, geojson, etc)", type=["png"])
+
+    assert kept == [good, photo]
+    assert "zip" in seen["kwargs"]["type"] and "geojson" in seen["kwargs"]["type"]
+    assert state["_pending_geofile"] == {"name": "farm.geojson", "format": "geojson"}
+    assert warnings == []
+    assert _inspect_geojson(b"not json") is not None
 
 
 def test_session_locks_are_per_session_and_do_not_block_each_other():
@@ -284,14 +314,19 @@ def test_uv_lock_pins_semente_to_a_git_commit():
     assert re.search(r'source = \{ git = "https://github\.com/lapig-ufg/semente\.git(\?rev=[^"#]+)?#[0-9a-f]{40}" \}', lock)
 
 
-def test_file_uploader_keeps_only_media_types_and_translates_the_label():
-    from app.frontend import _media_uploader
+def test_file_uploader_keeps_media_and_geo_types_and_translates_the_label(monkeypatch):
+    import streamlit as st
 
+    from app.frontend import _file_uploader
+
+    state = {}
+    monkeypatch.setattr(st, "session_state", state)
     seen = {}
-    wrapper = _media_uploader(lambda *args, **kwargs: seen.update(args=args, kwargs=kwargs))
+    wrapper = _file_uploader(lambda *args, **kwargs: seen.update(args=args, kwargs=kwargs) or [])
     wrapper(
         "Envie imagens/áudio/mapas (png, jpg, mp3, zip, kmz, kml, geojson, etc)",
-        type=["png", "mp3", "zip", "kmz", "kml", "geojson", "json"],
+        type=["png", "mp3"],
     )
-    assert seen["args"] == ("Upload images or audio",)
-    assert seen["kwargs"]["type"] == ["png", "mp3"]
+    assert seen["args"] == ("Upload images, audio or a shapefile/KML/GeoJSON boundary",)
+    assert seen["kwargs"]["type"][:2] == ["png", "mp3"]
+    assert {"zip", "kmz", "kml", "geojson", "json", "rar"}.issubset(set(seen["kwargs"]["type"]))
