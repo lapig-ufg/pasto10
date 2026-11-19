@@ -110,7 +110,7 @@ Health check: `curl http://localhost:8501/_stcore/health` answers `ok`.
 
 1. Choose **anonymous** sign-in.
 2. In the sidebar, **Test properties**: pick one of the 15 and click **Use this property**. It registers a
-   circular area (buffer) with the radius of the property and accepts the terms, so you can ask right away.
+   circular area (buffer) with the radius of the property and completes onboarding, so you can ask right away.
    The picker only exists with `APP_ENV=development`, which `run_local.sh` already sets.
 3. Ask in English, for example:
    - `Show me the pasture map and the total pasture area.`
@@ -124,12 +124,15 @@ Health check: `curl http://localhost:8501/_stcore/health` answers `ok`.
    Google Maps location link instead of the coordinate (in Google Maps: press and hold the spot, Share, copy the link),
    for example `Register https://www.google.com/maps/place/Pampa/@-33.0,-56.0,14z with a 300 m radius`; short and long links work, only
    `https` Google hosts are opened (at most 5 redirects, short timeouts, no body downloaded) and a link that
-   only names a place, without coordinate, is refused. Circular areas around a coordinate are the only way to
-   register an area; the link is just another way to give the center.
+   only names a place, without coordinate, is refused. You can also attach a geospatial file (shapefile `.zip`/`.rar`,
+   KMZ, KML or GeoJSON) or paste GeoJSON of the boundary: it is registered as one rural property (multi-polygon files
+   are united). For a line sampling, give two coordinates and ask for a transect; after confirming the line, give a
+   name and the total area of the property in hectares. The Google Maps link is just another way to give the buffer center.
 
 What to expect: each answer shows the map or figures and says the year and the source. Maps after 2022 are
 experimental estimates and the assistant warns about it; the two negative controls (Lima, Atacama) should
-return little or no pasture. Registered areas are approximate circles, not property boundaries.
+return little or no pasture. A registered circular area is approximate and not a property boundary; a boundary you
+provide in a file or as GeoJSON is your property boundary, and a transect is only a sampling line.
 
 First requests are slow (Earth Engine, up to about a minute); repeated ones are served from cache.
 
