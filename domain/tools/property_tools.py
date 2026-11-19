@@ -21,12 +21,18 @@ from semente import File, Image, ToolResult, tool
 from semente.logging import log_debug, log_warning
 from semente.configs.prompts import get_agent_config, get_tool_description, get_tool_result_text
 
-from domain.schemas.candidate import PropertyCandidate
+from domain.schemas.candidate import GeometryOrigin, PropertyCandidate
 from domain.schemas.feature import Feature, FeatureMetadata
 from domain.services.geospatial.geometry import build_buffered_area
 from domain.services.geospatial.image import RenderedImage, render_buffer_image, render_candidate_image, render_candidates_image
 from domain.services.property_sources import registry
 from domain.services.property_sources.base import PropertySourceError
+from domain.services.property_sources.geofile_source import (
+    is_supported_geofile,
+    max_geofile_mb,
+    parse_converted_geojson,
+    parse_geofile,
+)
 from domain.services.property_sources.user_polygon_source import InvalidPolygon, max_polygon_ha, parse_geojson
 from domain.utils.feature_utils import get_registered_features, set_registered_features, summarize_feature
 from domain.utils.tool_utils import unexpected_error
@@ -628,40 +634,82 @@ def select_candidate(run_context: RunContext, selection: int):
         return unexpected_error(_COMPONENT, tool_key)
 
 
-def _first_geojson_bytes(files: Optional[List[File]]) -> Optional[bytes]:
-    """Returns the content of the first GeoJSON file attached to the conversation, or None.
+def _first_attached_geofile(files: Optional[List[File]]) -> Optional[tuple[bytes, str, bool]]:
+    """Returns the first geospatial file attached to the conversation, or None.
+
+    Semente's input step already converts every supported geospatial document
+    (shapefile .zip/.rar, KMZ, KML and GeoJSON) to GeoJSON and attaches it as a
+    file whose ``format`` is ``geojson``; a raw geofile (another client or a
+    direct tool call) is returned with ``converted=False`` so this tool converts
+    it itself.
 
     Args:
         files (List[File], optional): Files injected by the framework.
 
     Returns:
-        bytes | None: Content of the first file whose ``format`` is ``geojson`` or ``json``.
+        tuple[bytes, str, bool] | None: ``(content, filename, converted)`` of the
+        first geospatial file, or None when there is none.
     """
     for file in files or []:
-        if getattr(file, "format", None) in ("geojson", "json") and file.content:
-            return file.content
+        filename = getattr(file, "name", None) or getattr(file, "filename", None) or ""
+        content = getattr(file, "content", None)
+        if not content:
+            continue
+        if getattr(file, "format", None) in ("geojson", "json"):
+            return content, filename or "property.geojson", True
+        if is_supported_geofile(filename):
+            return content, filename, False
     return None
+
+
+def _invalid_polygon_result(tool_key: str, error: InvalidPolygon, from_file: bool) -> ToolResult:
+    """Maps an ``InvalidPolygon`` kind to the result text that tells the model what to say.
+
+    Args:
+        tool_key (str): Tool whose ``results`` texts are rendered.
+        error (InvalidPolygon): The parser failure.
+        from_file (bool): Whether the boundary came from an attached geofile (larger limits).
+
+    Returns:
+        ToolResult: ``polygon_too_large``, ``polygon_too_complex``/``pasted_too_complex``,
+        ``unreadable_file`` or ``invalid_polygon`` instructions.
+    """
+    if error.kind == "too_large":
+        return ToolResult(content=get_tool_result_text("property_tools", tool_key, "polygon_too_large", max_ha=f"{max_polygon_ha():g}"))
+    if error.kind in ("file_too_large", "too_many_vertices", "too_many_features", "too_many_rings", "too_complex"):
+        if from_file:
+            return ToolResult(content=get_tool_result_text(
+                "property_tools", tool_key, "polygon_too_complex", max_mb=max_geofile_mb(),
+            ))
+        return ToolResult(content=get_tool_result_text("property_tools", tool_key, "pasted_too_complex"))
+    if error.kind in ("unsupported_format", "unreadable_file", "geo_stack_missing"):
+        return ToolResult(content=get_tool_result_text("property_tools", tool_key, "unreadable_file"))
+    return ToolResult(content=get_tool_result_text("property_tools", tool_key, "invalid_polygon"))
 
 
 @tool(description=get_tool_description("property_tools", "register_polygon"))
 def register_polygon(run_context: RunContext, geojson: Optional[str] = None, files: Optional[List[File]] = None):
-    """Starts the registration of a polygon provided by the user (GeoJSON text or attached file).
+    """Starts the registration of a rural property provided by the user (GeoJSON text or geospatial file).
 
-    The GeoJSON comes from, in order: the ``geojson`` argument (text pasted in the message), the first GeoJSON of
-    ``files`` (framework attachments) and ``session_state["uploaded_geojson"]`` (``{"name", "content"}``, written by the
-    front end for the current turn when the user attaches a file). ``uploaded_geojson`` is always removed from the
-    session when read, so an old upload can never be reused. Whatever the source, the content goes through the same
-    safe parser and limits (``parse_geojson``).
+    The boundary comes from, in order: the ``geojson`` argument (text pasted in the message), the first geospatial
+    file of ``files`` (framework attachments, already converted by Semente's input step) and
+    ``session_state["uploaded_geojson"]`` (``{"name", "content"}``, written by the front end for the current turn).
+    ``uploaded_geojson`` is always removed from the session when read, so an old upload can never be reused.
+
+    A pasted polygon goes through the strict pasted-input limits (``parse_geojson``); an attached file goes through
+    the geofile limits and is converted to GeoJSON first when it is still raw (shapefile .zip/.rar, KMZ, KML or
+    GeoJSON). Either way the registered feature is a ``rural_property``; a file with several polygons becomes one
+    property (the union of its parts).
 
     Args:
         run_context (RunContext): The run context holding ``session_state``.
         geojson (str, optional): GeoJSON text pasted by the user (Feature, FeatureCollection or geometry).
         files (List[File], optional): Files attached to the conversation, injected by the framework; the
-            first GeoJSON file is used when ``geojson`` is not given.
+            first geospatial file is used when ``geojson`` is not given.
 
     Returns:
         ToolResult: ``confirm_candidate`` with the polygon image; or ``missing_polygon``, ``invalid_polygon``,
-        ``polygon_too_large`` or ``error`` instructions.
+        ``polygon_too_large``, ``polygon_too_complex``, ``unreadable_file`` or ``error`` instructions.
 
     Side effects:
         Removes ``uploaded_geojson`` from the session. On success, sets ``candidate_properties`` (the ``Feature``)
@@ -671,18 +719,22 @@ def register_polygon(run_context: RunContext, geojson: Optional[str] = None, fil
     log_debug(f"{tool_key}: geojson={'yes' if geojson else 'no'}, files={len(files or [])}")
     try:
         uploaded = run_context.session_state.pop("uploaded_geojson", None)
-        content = geojson or _first_geojson_bytes(files) or (uploaded.get("content") if isinstance(uploaded, dict) else None)
-        if not content:
-            return ToolResult(content=get_tool_result_text("property_tools", tool_key, "missing_polygon"))
+        from_file = False
         try:
-            candidate = parse_geojson(content)
+            if geojson:
+                candidate = parse_geojson(geojson, origin=GeometryOrigin.RURAL_PROPERTY)
+            elif (attached := _first_attached_geofile(files)) is not None:
+                from_file = True
+                content, filename, converted = attached
+                candidate = parse_converted_geojson(content, filename) if converted else parse_geofile(content, filename)
+            elif isinstance(uploaded, dict) and uploaded.get("content"):
+                from_file = True
+                candidate = parse_converted_geojson(uploaded["content"], str(uploaded.get("name") or "property.geojson"))
+            else:
+                return ToolResult(content=get_tool_result_text("property_tools", tool_key, "missing_polygon"))
         except InvalidPolygon as error:
             log_warning(f"{tool_key}: {error.kind}: {error}")
-            if error.kind == "too_large":
-                return ToolResult(content=get_tool_result_text("property_tools", tool_key, "polygon_too_large", max_ha=f"{max_polygon_ha():g}"))
-            if error.kind in ("file_too_large", "too_many_vertices", "too_many_features", "too_many_rings", "too_complex"):
-                return ToolResult(content=get_tool_result_text("property_tools", tool_key, "polygon_too_complex"))
-            return ToolResult(content=get_tool_result_text("property_tools", tool_key, "invalid_polygon"))
+            return _invalid_polygon_result(tool_key, error, from_file)
         return _make_pending(run_context, candidate, tool_key)
     except Exception:
         return unexpected_error(_COMPONENT, tool_key)

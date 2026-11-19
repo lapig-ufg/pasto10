@@ -22,6 +22,7 @@ class GeometryOrigin(str, Enum):
     REGISTERED_BOUNDARY = "registered_boundary"
     OSM_LANDUSE = "osm_landuse"
     USER_POLYGON = "user_polygon"
+    RURAL_PROPERTY = "rural_property"
     APPROXIMATE_CIRCLE = "approximate_circle"
 
 

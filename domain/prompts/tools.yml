@@ -264,34 +264,44 @@ property_tools:
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
   register_polygon:
     description: |
-      Starts the registration of an area from a polygon provided by the user, as GeoJSON (a Feature, a
-      FeatureCollection or a geometry in longitude/latitude).
+      Starts the registration of a rural property from a boundary provided by the user: GeoJSON text pasted
+      in the message, or an attached geospatial file (shapefile .zip/.rar, KMZ, KML or GeoJSON).
 
-      Use this tool when the user attaches a GeoJSON file or pastes GeoJSON text with the boundary of their area.
-      When a file is attached, call the tool without arguments: the file is read by the system and you must not copy
-      coordinates yourself. Other formats (KML, shapefile) are not supported yet: ask for GeoJSON.
+      Use this tool when the user attaches a geospatial file or pastes GeoJSON text with the boundary of their
+      area. When a file is attached, call the tool without arguments: the system converts the file to GeoJSON
+      and reads it, and you must not copy coordinates yourself. A file with several polygons (paddocks) is
+      registered as a single rural property, the union of all of them.
 
-      When the user's message contains the note "[GeoJSON file attached: <name>, <N> vertices]", the file was uploaded: call this tool with `geojson` EMPTY (the system reads the attached file; never copy coordinates). When the user pastes the GeoJSON text in the message, pass that text in `geojson`. Pass the GeoJSON text of the user's CURRENT message in `geojson` (it may follow the words "GeoJSON provided by the user:"); never reuse a polygon from an earlier message. If the current message has no GeoJSON and no file is attached, call it without arguments so the user is asked for one.
+      When the user's message contains the note "[Geospatial file attached: <name>]", the file was uploaded:
+      call this tool with `geojson` EMPTY (the system reads the attached file; never copy coordinates). When
+      the user pastes the GeoJSON text in the message, pass that text in `geojson`. Pass the GeoJSON text of
+      the user's CURRENT message in `geojson` (it may follow the words "GeoJSON provided by the user:");
+      never reuse a polygon from an earlier message. If the current message has no GeoJSON and no file is
+      attached, call it without arguments so the user is asked for one.
 
       Args:
           geojson (str, optional): GeoJSON text pasted by the user. Leave empty when a file is attached.
 
       Returns:
-          ToolResult: An image of the polygon and instructions to ask for confirmation.
+          ToolResult: An image of the boundary and instructions to ask for confirmation.
     results:
       confirm_candidate: |
-        The user provided this polygon ({origin_label}):
+        The user provided this boundary ({origin_label}):
         > {area_details}
         {notes}
-        The polygon image is attached: show it to the user first, then ask whether this polygon is their area. When the user confirms, call `confirm_registration` and then ask for a name for the area; once it is registered do not ask again whether this is their area.
+        The boundary image is attached: show it to the user first, then ask whether this boundary is their area. When the user confirms, call `confirm_registration` and then ask for a name for the area; once it is registered do not ask again whether this is their area.
       missing_polygon: |
-        No GeoJSON was received. Ask the user to attach a GeoJSON file or paste the GeoJSON of their area.
+        No boundary was received. Ask the user to attach a geospatial file (shapefile .zip/.rar, KMZ, KML or GeoJSON) or paste the GeoJSON of their area.
       invalid_polygon: |
-        The polygon could not be read: it must be valid GeoJSON with a Polygon or MultiPolygon in longitude/latitude degrees. Apologize and ask for a corrected GeoJSON with a simple polygon, without self-intersecting edges (KML and shapefiles are not supported yet).
+        The boundary could not be read: it must be valid GeoJSON with a Polygon or MultiPolygon in longitude/latitude degrees, or a supported geospatial file. Apologize and ask for a corrected file with a simple polygon, without self-intersecting edges.
+      unreadable_file: |
+        The geospatial file could not be read: it may be corrupted, empty or contain no polygon, or the format may not be supported. Supported formats are shapefile .zip/.rar, KMZ, KML and GeoJSON. Apologize and ask the user to check the file and send it again (a .zip with the shapefile or a .kml are the safest options).
       polygon_too_large: |
-        The polygon is larger than the maximum of {max_ha} ha. Ask for a smaller area.
+        The boundary is larger than the maximum of {max_ha} ha. Ask for a smaller area.
       polygon_too_complex: |
-        The polygon is too large or too complex to be read safely (limits: 1 MB, 2,000 vertices, 20 features, 50 rings, and an invalid polygon with self-intersecting edges can only be small). Apologize and ask the user for a simple polygon of their area (a single polygon without self-intersecting edges, simplified to a few hundred vertices) as GeoJSON.
+        The boundary is too large or too complex to be read safely (the attached file may not exceed {max_mb} MB, and the geometry has limits on vertices, features and rings). Apologize and ask the user for a simpler boundary (simplify the polygon or reduce the file) as a shapefile .zip, KML or GeoJSON.
+      pasted_too_complex: |
+        The pasted polygon is too large or too complex to be read safely (limits: 1 MB, 2,000 vertices, 20 features and 50 rings, and an invalid polygon with self-intersecting edges can only be small). Apologize and ask the user for a simple polygon of their area (a single polygon without self-intersecting edges, simplified to a few hundred vertices), or attach a shapefile .zip, KML or GeoJSON.
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
   confirm_registration:

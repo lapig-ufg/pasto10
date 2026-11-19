@@ -12,7 +12,9 @@ dependencies = [
     "pillow>=12.3.0",
     "reportlab>=5.0.1",
     "requests>=2.34.2",
-    "semente-agents",
+    # The geo extra brings geopandas/pyproj/rarfile, which Semente's input
+    # step needs to convert shapefile .zip/.rar, KMZ, KML and GeoJSON.
+    "semente-agents[geo]",
     "shapely>=2.2.0",
     "streamlit>=1.52.2,<1.53",
 ]

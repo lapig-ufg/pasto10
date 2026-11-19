@@ -175,14 +175,14 @@ def test_the_buffer_tool_still_works_and_says_it_is_an_approximate_circle():
     assert "approximate circle" in result.content and "NOT a real property boundary" in result.content
 
 
-def test_register_polygon_from_text_leaves_a_user_polygon_pending():
+def test_register_polygon_from_text_leaves_a_rural_property_pending():
     run_context = _context()
 
     result = property_tools.register_polygon(run_context=run_context, geojson=json.dumps(SQUARE))
 
     feature = Feature.model_validate(run_context.session_state["candidate_properties"][0])
     assert run_context.session_state["registration_state"] == "pending" and result.images
-    assert feature.feature_type == "user_polygon" and "user-provided polygon" in result.content
+    assert feature.feature_type == "rural_property" and "rural property boundary" in result.content
     assert get_registered_features(run_context.session_state).features == []
 
 
@@ -193,13 +193,27 @@ def test_register_polygon_reads_the_attached_file(fmt):
 
     result = property_tools.register_polygon(run_context=run_context, files=files)
 
+    feature = Feature.model_validate(run_context.session_state["candidate_properties"][0])
     assert run_context.session_state["registration_state"] == "pending" and "is their area" in result.content
+    assert feature.feature_type == "rural_property"
+
+
+def test_an_attached_file_is_registered_as_a_named_rural_property():
+    run_context = _context()
+    files = [File(content=json.dumps({"type": "Feature", "geometry": SQUARE, "properties": {}}).encode(), name="farm.json", format="geojson")]
+
+    property_tools.register_polygon(run_context=run_context, files=files)
+    property_tools.confirm_registration(run_context=run_context, name="North Farm")
+
+    feature = get_registered_features(run_context.session_state).features[0]
+    assert (feature.name, feature.feature_type) == ("North Farm", "rural_property")
+    assert feature.get_metadata("source_file") == "farm.json" and summarize_feature(feature).startswith("rural property boundary")
 
 
 @pytest.mark.parametrize(
     "kwargs, expected",
     [
-        ({}, "No GeoJSON was received"),
+        ({}, "No boundary was received"),
         ({"geojson": "not json"}, "could not be read"),
         ({"geojson": json.dumps({"type": "Point", "coordinates": [1, 2]})}, "could not be read"),
         ({"geojson": json.dumps({"type": "Polygon", "coordinates": [[[0, 0], [60, 0], [60, 60], [0, 60], [0, 0]]]})}, "larger than the maximum of 50000 ha"),
@@ -297,7 +311,7 @@ def test_hostile_polygons_are_rejected_at_the_tool_with_the_complexity_text():
     result = property_tools.register_polygon(run_context=run_context, geojson=json.dumps({"type": "Polygon", "coordinates": [ring + [ring[0]]]}, separators=(",", ":")))
     attached = property_tools.register_polygon(run_context=run_context, files=[File(content=b"x" * 2_000_000, format="geojson")])
 
-    assert "too large or too complex" in result.content and "too large or too complex" in attached.content
+    assert "too large or too complex" in result.content and "could not be read" in attached.content
     assert run_context.session_state == {}
 
 
@@ -364,7 +378,7 @@ def test_register_polygon_replaces_whatever_registration_was_pending(first_state
     feature = Feature.model_validate(run_context.session_state["candidate_properties"][0])
     latitude, longitude = parse_center(feature)
     assert run_context.session_state["registration_state"] == "pending" and result.images
-    assert len(run_context.session_state["candidate_properties"]) == 1 and feature.feature_type == "user_polygon"
+    assert len(run_context.session_state["candidate_properties"]) == 1 and feature.feature_type == "rural_property"
     assert (latitude, longitude) == pytest.approx((-31.0, -56.0), abs=0.005) and "Location: -31.0" in result.content
 
 
@@ -389,7 +403,7 @@ def test_register_polygon_never_reuses_an_earlier_polygon_when_the_current_messa
 
     result = property_tools.register_polygon(run_context=run_context)
 
-    assert "No GeoJSON was received" in result.content and not result.images
+    assert "No boundary was received" in result.content and not result.images
     assert run_context.session_state == before
 
 
@@ -416,20 +430,43 @@ def _many_holes_document() -> str:
 
 
 @pytest.mark.parametrize("make", [lambda: _zigzag_document(500), lambda: _zigzag_document(1000), _many_features_document, _many_holes_document], ids=["zigzag-500", "zigzag-1000", "features-300", "holes-2000"])
-@pytest.mark.parametrize("via", ["argument", "file"])
-def test_hostile_payloads_are_rejected_quickly_through_the_tool(make, via):
+def test_hostile_pasted_payloads_are_rejected_quickly_through_the_tool(make):
     import time
 
     run_context = _context()
-    document = make()
-    kwargs = {"geojson": document} if via == "argument" else {"files": [File(content=document.encode(), format="geojson")]}
     start = time.perf_counter()
 
-    result = property_tools.register_polygon(run_context=run_context, **kwargs)
+    result = property_tools.register_polygon(run_context=run_context, geojson=make())
 
     assert time.perf_counter() - start < 2.0
     assert "too large or too complex" in result.content and "unexpected error" not in result.content
     assert run_context.session_state == {} and not result.images
+
+
+@pytest.mark.parametrize("make", [_many_features_document, _many_holes_document], ids=["features-300", "holes-2000"])
+def test_hostile_attached_files_are_rejected_quickly_through_the_tool(make):
+    import time
+
+    run_context = _context()
+    start = time.perf_counter()
+
+    result = property_tools.register_polygon(run_context=run_context, files=[File(content=make().encode(), format="geojson")])
+
+    assert time.perf_counter() - start < 2.0
+    assert "too large or too complex" in result.content and "unexpected error" not in result.content
+    assert run_context.session_state == {} and not result.images
+
+
+@pytest.mark.parametrize("vertices", [500, 1000])
+def test_self_intersecting_attached_files_are_repaired_instead_of_refused(vertices):
+    run_context = _context()
+
+    result = property_tools.register_polygon(
+        run_context=run_context, files=[File(content=_zigzag_document(vertices).encode(), format="geojson")]
+    )
+
+    assert run_context.session_state["registration_state"] == "pending" and result.images
+    assert Feature.model_validate(run_context.session_state["candidate_properties"][0]).feature_type == "rural_property"
 
 
 @pytest.mark.parametrize("document", ['{"type":"Polygon","coordinates":[[[NaN,1],[2,2],[3,1],[NaN,1]]]}', '{"type":"Polygon","coordinates":[[[1e999,1],[2,2],[3,1],[1,1]]]}'])
@@ -453,6 +490,7 @@ def test_an_uploaded_file_in_the_session_is_used_when_the_arguments_are_empty():
 
     feature = Feature.model_validate(run_context.session_state["candidate_properties"][0])
     assert run_context.session_state["registration_state"] == "pending" and result.images
+    assert feature.feature_type == "rural_property"
     assert parse_center(feature) == pytest.approx((-31.0, -56.0), abs=0.005) and "Location: -31.0" in result.content
 
 
@@ -481,7 +519,7 @@ def test_without_argument_file_or_upload_the_polygon_is_missing_and_an_old_one_i
 
     result = property_tools.register_polygon(run_context=run_context)
 
-    assert "No GeoJSON was received" in result.content and not result.images and run_context.session_state == before
+    assert "No boundary was received" in result.content and not result.images and run_context.session_state == before
 
 
 def test_the_upload_is_removed_even_when_it_cannot_be_used():
@@ -493,8 +531,8 @@ def test_the_upload_is_removed_even_when_it_cannot_be_used():
     assert "uploaded_geojson" not in property_tools.register_polygon(run_context=_context(uploaded_geojson="junk")).content
 
 
-@pytest.mark.parametrize("make", [lambda: _zigzag_document(500), _many_features_document, _many_holes_document, lambda: "x" * 2_000_000], ids=["zigzag", "features", "holes", "huge"])
-def test_a_hostile_uploaded_file_goes_through_the_same_limits(make):
+@pytest.mark.parametrize("make", [_many_features_document, _many_holes_document], ids=["features", "holes"])
+def test_a_hostile_uploaded_file_goes_through_the_geofile_limits(make):
     import time
 
     run_context = _context(uploaded_geojson={"name": "x.geojson", "content": make()})
@@ -506,11 +544,28 @@ def test_a_hostile_uploaded_file_goes_through_the_same_limits(make):
     assert "uploaded_geojson" not in run_context.session_state and run_context.session_state.get("registration_state") is None
 
 
+def test_a_self_intersecting_uploaded_file_is_repaired():
+    run_context = _context(uploaded_geojson={"name": "x.geojson", "content": _zigzag_document(500)})
+
+    result = property_tools.register_polygon(run_context=run_context)
+
+    assert run_context.session_state["registration_state"] == "pending" and result.images
+    assert "uploaded_geojson" not in run_context.session_state
+
+
+def test_an_uploaded_file_that_is_not_geojson_is_consumed_and_explained():
+    run_context = _context(uploaded_geojson={"name": "x.geojson", "content": "x" * 2_000_000})
+
+    result = property_tools.register_polygon(run_context=run_context)
+
+    assert "could not be read" in result.content and "uploaded_geojson" not in run_context.session_state
+
+
 def test_the_instructions_tell_the_model_what_to_do_with_the_attachment_note():
     from semente.configs.prompts import get_agent_config
 
     config = get_agent_config("single_agent")
 
     for key in ("instructions_default", "instructions_pending_single", "instructions_choosing", "instructions_final"):
-        assert "[GeoJSON file attached" in config[key] and "`geojson` EMPTY" in config[key], key
+        assert "[Geospatial file attached" in config[key] and "`geojson` EMPTY" in config[key], key
     assert "geojson` EMPTY" in get_tool_description("property_tools", "register_polygon")

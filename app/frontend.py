@@ -14,15 +14,15 @@ Wrapped behaviours:
       other parts of the front end inject a message into the conversation.
     - ``st.selectbox`` over stored users shows the ``nickname`` that Semente saves
       (Semente reads a key that does not exist and lists everybody as "User").
-    - ``st.file_uploader`` also accepts ``.geojson``/``.json``; their content is
-      appended to the next chat message only (Semente only forwards images and audio).
+    - ``st.file_uploader`` also accepts geospatial files (shapefile .zip/.rar,
+      KMZ, KML and GeoJSON); they are passed to Semente's input step, which
+      converts them to GeoJSON for the registration tool.
     - The "Debug Mode" toggle is shown only with ``APP_ENV=development`` set explicitly.
     - ``Harness.run`` holds the per-session lock, so direct registrations never race an agent turn of
-      the same session, and hands an uploaded GeoJSON to the agent through the session state.
+      the same session.
     - Generic "Error" answers are replaced by a friendlier English message.
 """
 
-import hashlib
 import json
 import re
 
@@ -35,10 +35,10 @@ _set_page_config = st.set_page_config
 # Semente 0.4 removed the fixed-coordinates location button; kept empty so a
 # future release can be hidden again without touching the install loop.
 _HIDDEN_BUTTONS: set[str] = set()
-_EXTRA_UPLOAD_TYPES = ["geojson", "json"]
-_GEOJSON_KEY = "_pending_geojson"
-_CHECKED_KEY = "_geojson_checked"
-STATE_KEY = "uploaded_geojson"
+# Formats Semente's geo intake converts (shapefile .zip/.rar, KMZ, KML, GeoJSON).
+_EXTRA_UPLOAD_TYPES = ["geojson", "json", "zip", "rar", "kmz", "kml"]
+_GEO_EXTENSIONS = tuple(f".{extension}" for extension in _EXTRA_UPLOAD_TYPES)
+_GEOFILE_KEY = "_pending_geofile"
 
 LABELS = {
     "Login": "Sign in",
@@ -48,7 +48,7 @@ LABELS = {
     "User identification": "Your name or nickname",
     "Log In Anonymously": "Continue anonymously",
     "Log Out / Switch User": "Sign out / Switch user",
-    "Upload images/audio (png, jpg, mp3, etc)": "Upload images, audio or a GeoJSON polygon",
+    "Upload images/audio (png, jpg, mp3, etc)": "Upload images, audio or a shapefile/KML/GeoJSON boundary",
     "Type your message...": "Ask about pastures...",
     "Analyzing data and generating response...": "Analyzing data and generating the answer...",
     "Error": "Sorry, I could not produce an answer. Please try again.",
@@ -125,46 +125,53 @@ def _selectbox(original):
 
 
 def _file_uploader(original):
-    """Wraps ``st.file_uploader``: accepts GeoJSON and keeps the validated file for the next turn.
+    """Wraps ``st.file_uploader``: accepts geospatial files and forwards them to Semente.
 
     Side effects:
-        Stores ``{"name", "content", "vertices"}`` of the first valid ``.geojson``/``.json``
-        upload (within the domain parser limits) in ``st.session_state["_pending_geojson"]``; the
-        chat input wrapper adds a short note to the message and ``Harness.run`` (see
-        ``_locked_run``) hands the content to the agent. Those files are removed from the returned
-        list because Semente only forwards images and audio. Oversized or invalid files are
-        rejected with a warning, never truncated. Semente replaces the uploader after each
+        Stores ``{"name", "format"}`` of the first accepted geospatial upload in
+        ``st.session_state["_pending_geofile"]``; the chat input wrapper adds a short
+        note to the message. The accepted file stays in the returned list, so Semente's
+        input step converts it (shapefile .zip/.rar, KMZ, KML or GeoJSON) and injects
+        the resulting GeoJSON into the registration tool. Oversized files are rejected
+        with a warning, never truncated. Semente replaces the uploader after each
         answer, which clears the pending upload.
     """
     translating = _translating(original)
 
     def wrapper(label, *args, **kwargs):
+        from domain.services.property_sources.geofile_source import max_geofile_bytes
+
         types = kwargs.get("type")
         if types is not None:
             kwargs["type"] = list(types) + [t for t in _EXTRA_UPLOAD_TYPES if t not in types]
         files = translating(label, *args, **kwargs)
         kept, accepted = [], []
         for uploaded in files or []:
-            if not uploaded.name.lower().endswith(tuple(f".{t}" for t in _EXTRA_UPLOAD_TYPES)):
+            if not uploaded.name.lower().endswith(_GEO_EXTENSIONS):
                 kept.append(uploaded)
                 continue
             raw = uploaded.getvalue()
             name = safe_filename(uploaded.name)
-            digest = hashlib.sha256(raw).hexdigest()
-            checked = st.session_state.setdefault(_CHECKED_KEY, {})
-            if digest not in checked:
-                checked[digest] = _inspect_geojson(raw)
-            problem, vertices = checked[digest]
-            if problem:
-                st.warning(f"{name}: {problem}")
-            elif accepted:
-                st.warning(f"{name}: only one GeoJSON file is used per message; it was ignored.")
-            else:
-                accepted.append({"name": name, "content": raw.decode("utf-8"), "vertices": vertices})
+            if len(raw) > max_geofile_bytes():
+                st.warning(
+                    f"{name}: this file is too large ({len(raw):,} bytes; the limit is "
+                    f"{max_geofile_bytes():,}) and was ignored."
+                )
+                continue
+            if uploaded.name.lower().endswith((".geojson", ".json")):
+                problem = _inspect_geojson(raw)
+                if problem:
+                    st.warning(f"{name}: {problem}")
+                    continue
+            if accepted:
+                st.warning(f"{name}: only one geospatial file is used per message; it was ignored.")
+                continue
+            accepted.append({"name": name, "format": uploaded.name.rsplit(".", 1)[-1].lower()})
+            kept.append(uploaded)
         if accepted:
-            st.session_state[_GEOJSON_KEY] = accepted[0]
+            st.session_state[_GEOFILE_KEY] = accepted[0]
         else:
-            st.session_state.pop(_GEOJSON_KEY, None)
+            st.session_state.pop(_GEOFILE_KEY, None)
         return kept
 
     wrapper.__wrapped__ = original
@@ -186,36 +193,38 @@ def safe_filename(name) -> str:
 
 
 def _inspect_geojson(raw: bytes):
-    """Validates an uploaded GeoJSON file with the same cheap checks the domain parser applies.
+    """Validates an uploaded GeoJSON file with the cheap geofile checks.
 
-    Reuses ``MAX_BYTES``, ``raw_vertex_count`` (iterative, bounded depth, finite lon/lat, rings
-    and vertex limits) and the NaN/Infinity rejection of ``user_polygon_source``, and never raises:
-    any failure, including a ``RecursionError`` from deeply nested JSON, becomes a problem text.
+    Reuses ``MAX_CONVERTED_BYTES``, ``raw_vertex_count`` (iterative, bounded depth, finite
+    lon/lat, rings and vertex limits) and the NaN/Infinity rejection of
+    ``user_polygon_source``, with the geofile vertex limit (a real property file is much
+    larger than a pasted polygon). Never raises: any failure, including a ``RecursionError``
+    from deeply nested JSON, becomes a problem text.
 
     Args:
         raw (bytes): The file content.
 
     Returns:
-        tuple: ``(problem, vertices)``; ``problem`` is a user-facing reason (None when the file
-        can be sent to the assistant) and ``vertices`` the number of positions found.
+        str | None: A user-facing reason (None when the file can be sent to the assistant).
     """
+    from domain.services.property_sources import geofile_source as geofiles
     from domain.services.property_sources import user_polygon_source as source
 
     try:
-        if len(raw) > source.MAX_BYTES:
-            return f"this file is too large ({len(raw):,} bytes; the limit is {source.MAX_BYTES:,}) and was ignored. Simplify the polygon and try again.", 0
+        if len(raw) > geofiles.MAX_CONVERTED_BYTES:
+            return f"this file is too large ({len(raw):,} bytes; the limit is {geofiles.MAX_CONVERTED_BYTES:,}) and was ignored."
         document = json.loads(raw.decode("utf-8"), parse_constant=source._reject_constant)
         geometries = source._geometries(document) if isinstance(document, dict) else []
-        vertices = source.raw_vertex_count(geometries)
-        if vertices > source.max_polygon_vertices():
-            return f"this polygon has too many vertices (the limit is {source.max_polygon_vertices():,}) and was ignored. Simplify it and try again.", 0
+        vertices = source.raw_vertex_count(geometries, geofiles.max_geofile_vertices())
+        if vertices > geofiles.max_geofile_vertices():
+            return f"this polygon has too many vertices (the limit is {geofiles.max_geofile_vertices():,}) and was ignored. Simplify it and try again."
         if not any(isinstance(g, dict) and g.get("type") in ("Polygon", "MultiPolygon") for g in geometries):
-            return "no polygon was found in this file and it was ignored.", 0
-        return None, vertices
+            return "no polygon was found in this file and it was ignored."
+        return None
     except source.InvalidPolygon as error:
-        return f"this file cannot be used as a polygon ({error.kind.replace('_', ' ')}) and was ignored.", 0
+        return f"this file cannot be used as a polygon ({error.kind.replace('_', ' ')}) and was ignored."
     except Exception:
-        return "this file is not valid JSON/GeoJSON and was ignored.", 0
+        return "this file is not valid JSON/GeoJSON and was ignored."
 
 
 def _chat_input(original):
@@ -223,8 +232,8 @@ def _chat_input(original):
 
     Returns:
         The injected ``st.session_state["_pending_prompt"]`` (consumed once) when set,
-        otherwise what the user typed, followed by a one-line note when a GeoJSON file is
-        attached (the content itself never goes into the message).
+        otherwise what the user typed, followed by a one-line note when a geospatial file
+        is attached (the content itself never goes into the message).
     """
     translating = _translating(original)
 
@@ -233,9 +242,9 @@ def _chat_input(original):
         pending = st.session_state.pop("_pending_prompt", None)
         if pending:
             return pending
-        upload = st.session_state.get(_GEOJSON_KEY)
+        upload = st.session_state.get(_GEOFILE_KEY)
         if typed and upload:
-            return f"{typed}\n\n[GeoJSON file attached: {upload['name']}, {upload['vertices']} vertices]"
+            return f"{typed}\n\n[Geospatial file attached: {upload['name']}]"
         return typed
 
     wrapper.__wrapped__ = original
@@ -260,44 +269,23 @@ def _toggle(original):
 
 
 def _locked_run(original):
-    """Wraps ``Harness.run``: per-session lock and hand-over of an uploaded GeoJSON.
+    """Wraps ``Harness.run``: per-session lock.
 
     ``Harness.run`` is synchronous (it returns the final output; ``stream=True`` is ignored by
-    Semente), so holding the lock for the call covers the whole agent turn.
+    Semente), so holding the lock for the call covers the whole agent turn. The geospatial
+    files themselves are forwarded by Semente's web app and converted by its input step.
 
     Side effects:
-        Holds ``session_lock(session_id)``. If a validated upload is pending in
-        ``st.session_state``, it is consumed and written to the persisted session state under
-        ``uploaded_geojson`` (``{"name", "content"}``) before the turn, so the registration tool can
-        read it without the model copying it; the key is removed from the store after the turn.
+        Holds ``session_lock(session_id)``.
     """
 
     def wrapper(self, *args, **kwargs):
         session_id = kwargs.get("session_id")
         with session_lock(session_id):
-            upload = st.session_state.pop(_GEOJSON_KEY, None)
-            if upload:
-                _set_stored_upload(session_id, {"name": upload["name"], "content": upload["content"]})
-            try:
-                return original(self, *args, **kwargs)
-            finally:
-                if upload:
-                    _set_stored_upload(session_id, None)
+            return original(self, *args, **kwargs)
 
     wrapper.__wrapped__ = original
     return wrapper
-
-
-def _set_stored_upload(session_id, value) -> None:
-    """Sets (or removes, with None) ``uploaded_geojson`` in the persisted session state of a session."""
-    from semente.database.session_store import store
-
-    loaded = store.get(session_id, session_id) or {"session_state": {}, "runs": []}
-    if value is None:
-        loaded["session_state"].pop(STATE_KEY, None)
-    else:
-        loaded["session_state"][STATE_KEY] = value
-    store.save(session_id, session_id, session_state=loaded["session_state"], runs=loaded["runs"])
 
 
 def _empty(original):

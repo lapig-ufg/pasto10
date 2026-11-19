@@ -2,8 +2,9 @@
 
 ``parse_geojson`` accepts a GeoJSON ``Feature``, ``FeatureCollection`` or bare
 geometry in WGS84 lon/lat, repairs it, enforces size limits and returns a
-``PropertyCandidate`` with origin ``user_polygon``. KML and shapefiles are not
-supported yet (convert them to GeoJSON).
+``PropertyCandidate`` with origin ``user_polygon`` (or the origin the caller
+asks for). Raw geospatial documents (shapefile .zip/.rar, KMZ, KML) are
+converted first by ``geofile_source.parse_geofile``.
 
 The input is hostile by default and defended in layers: (1) limits on bytes, features, rings and vertices, checked on the
 raw JSON before any geometry is built, with finite lon/lat coordinates required; (2) invalid polygons with more than
@@ -22,6 +23,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from domain.schemas.candidate import GeometryOrigin, PropertyCandidate
+from domain.schemas.feature import FeatureMetadata
 
 MAX_AREA_HA_ENV = "PASTO10_MAX_POLYGON_HA"
 MAX_VERTICES_ENV = "PASTO10_MAX_POLYGON_VERTICES"
@@ -168,28 +170,37 @@ def _reject_constant(name: str):
     raise ValueError(f"non-finite number {name}")
 
 
-def _run_guard(geometries: list, limit_ha: float) -> dict:
+def _run_guard(
+    geometries: list,
+    limit_ha: float,
+    max_repair_vertices: Optional[int] = None,
+    timeout_seconds: Optional[float] = None,
+) -> dict:
     """Runs ``polygon_guard.py`` in a child process with a hard timeout and returns its answer.
 
     Args:
         geometries (list): Raw GeoJSON geometries (already counted and range-checked).
         limit_ha (float): Area limit in hectares.
+        max_repair_vertices (int, optional): Total vertex budget for repairing invalid parts (larger for geofiles);
+            defaults to the module constant, read at call time.
+        timeout_seconds (float, optional): Hard timeout of the child process; defaults to the module constant, read
+            at call time.
 
     Returns:
-        dict: The guard's ``{"ok": ...}`` answer; ``too_complex`` when it did not finish within ``GUARD_TIMEOUT_SECONDS``
+        dict: The guard's ``{"ok": ...}`` answer; ``too_complex`` when it did not finish within ``timeout_seconds``
         (the child is killed), ``invalid_geometry`` when it crashed or printed invalid JSON. At most ``PASTO10_GUARD_CONCURRENCY``
         (default 3) guards run at once; others wait for a slot. The child runs with ``-I`` so the package directory is
         not put on its ``sys.path``.
     """
     request = {
         "geometries": geometries, "max_area_ha": limit_ha, "min_area_ha": MIN_AREA_HA, "simplify_m": SIMPLIFY_METERS,
-        "max_repair_vertices": MAX_REPAIR_VERTICES,
+        "max_repair_vertices": MAX_REPAIR_VERTICES if max_repair_vertices is None else max_repair_vertices,
     }
     try:
         with _GUARD_SLOTS:
             done = subprocess.run(
                 [sys.executable, "-I", str(GUARD_SCRIPT)], input=json.dumps(request), capture_output=True, text=True,
-                timeout=GUARD_TIMEOUT_SECONDS,
+                timeout=GUARD_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds,
             )
         return json.loads(done.stdout, parse_constant=_reject_constant)
     except subprocess.TimeoutExpired:
@@ -198,47 +209,71 @@ def _run_guard(geometries: list, limit_ha: float) -> dict:
         return {"ok": False, "kind": "invalid_geometry"}
 
 
-def parse_geojson(content: Union[str, bytes], max_area_ha: Optional[float] = None) -> PropertyCandidate:
+def parse_geojson(
+    content: Union[str, bytes],
+    max_area_ha: Optional[float] = None,
+    *,
+    max_bytes: int = MAX_BYTES,
+    max_vertices: Optional[int] = None,
+    max_repair_vertices: Optional[int] = None,
+    timeout_seconds: Optional[float] = None,
+    origin: GeometryOrigin = GeometryOrigin.USER_POLYGON,
+    candidate_id: str = "user-polygon",
+    name: Optional[str] = None,
+    attributes: Optional[list[FeatureMetadata]] = None,
+) -> PropertyCandidate:
     """Turns GeoJSON into a user-polygon candidate.
 
-    Defends the app in layers (see the module docstring): the document may not exceed ``MAX_BYTES`` (UTF-8 bytes), at
-    most ``MAX_FEATURES`` features and ``MAX_RINGS`` rings per polygon, and ``max_polygon_vertices()`` positions (all
-    features together), all checked on the raw JSON; coordinates must be finite lon/lat numbers; an invalid polygon with
-    more than ``MAX_REPAIR_VERTICES`` vertices is refused; and the shapely work runs in a child process killed after
-    ``GUARD_TIMEOUT_SECONDS``. With several polygonal features the largest is used; invalid small rings are repaired and
-    the geometry is simplified to about 5 m.
+    Defends the app in layers (see the module docstring): the document may not exceed ``max_bytes`` (UTF-8 bytes), at
+    most ``MAX_FEATURES`` features and ``MAX_RINGS`` rings per polygon, and ``max_vertices`` positions (all features
+    together), all checked on the raw JSON; coordinates must be finite lon/lat numbers; an invalid polygon with
+    more than ``max_repair_vertices`` vertices is refused; and the shapely work runs in a child process killed after
+    ``timeout_seconds``. Invalid small rings are repaired and the geometry is simplified to about 5 m. With several
+    polygonal features the largest is used (Semente's geofile conversion already merges the parts of a file into one
+    MultiPolygon, so a whole property is kept).
 
     Args:
         content (str | bytes): GeoJSON text (Feature, FeatureCollection or geometry).
         max_area_ha (float, optional): Area limit in hectares; defaults to ``max_polygon_ha()``.
+        max_bytes (int): Size limit of the content in bytes (defaults to the pasted-polygon limit).
+        max_vertices (int, optional): Vertex limit; defaults to ``max_polygon_vertices()``.
+        max_repair_vertices (int, optional): Total vertex budget for repairing invalid parts; defaults to
+            ``MAX_REPAIR_VERTICES``.
+        timeout_seconds (float, optional): Hard timeout of the guard child process; defaults to
+            ``GUARD_TIMEOUT_SECONDS``.
+        origin (GeometryOrigin): Origin stored in the candidate (and its feature type).
+        candidate_id (str): Stable candidate identifier.
+        name (str, optional): Display name of the candidate (for example the uploaded file stem).
+        attributes (list[FeatureMetadata], optional): Extra source attributes of the candidate.
 
     Returns:
-        PropertyCandidate: Candidate with origin ``user_polygon``, source ``user`` and no distance.
+        PropertyCandidate: Candidate with the requested origin, source ``user`` and no distance.
 
     Raises:
         InvalidPolygon: If the content is too large or complex, is not valid JSON/GeoJSON, has no polygon, has
         non-finite or out-of-range coordinates, or exceeds the area or vertex limits (``kind`` tells which).
     """
     limit = max_area_ha or max_polygon_ha()
+    vertex_limit = max_vertices if max_vertices is not None else max_polygon_vertices()
     size = len(content.encode("utf-8")) if isinstance(content, str) else len(content)
-    if size > MAX_BYTES:
-        raise InvalidPolygon("file_too_large", f"{size} bytes > {MAX_BYTES}")
+    if size > max_bytes:
+        raise InvalidPolygon("file_too_large", f"{size} bytes > {max_bytes}")
     try:
         data = json.loads(content, parse_constant=_reject_constant)
         geometries = _geometries(data) if isinstance(data, dict) else []
-        vertices = raw_vertex_count(geometries)
+        vertices = raw_vertex_count(geometries, vertex_limit)
     except InvalidPolygon:
         raise
     except (ValueError, TypeError, RecursionError) as error:
         raise InvalidPolygon("invalid_json", str(error)) from error
-    if vertices > max_polygon_vertices():
-        raise InvalidPolygon("too_many_vertices", f"more than {max_polygon_vertices()} vertices")
+    if vertices > vertex_limit:
+        raise InvalidPolygon("too_many_vertices", f"more than {vertex_limit} vertices")
     if not any(isinstance(geometry, dict) and geometry.get("type") in ("Polygon", "MultiPolygon") for geometry in geometries):
         raise InvalidPolygon("not_polygon" if geometries else "invalid_json", "no polygon found")
-    answer = _run_guard(geometries, limit)
+    answer = _run_guard(geometries, limit, max_repair_vertices=max_repair_vertices, timeout_seconds=timeout_seconds)
     if not answer.get("ok"):
         raise InvalidPolygon(answer.get("kind", "invalid_geometry"), f"guard: {answer.get('kind')}")
     return PropertyCandidate(
-        candidate_id="user-polygon", origin=GeometryOrigin.USER_POLYGON, source="user", geometry=answer["geometry"],
-        area_ha=round(answer["area_ha"], 2), distance_m=None, warnings=[],
+        candidate_id=candidate_id, name=name, origin=origin, source="user", geometry=answer["geometry"],
+        area_ha=round(answer["area_ha"], 2), distance_m=None, attributes=attributes or [], warnings=[],
     )

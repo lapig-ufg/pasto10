@@ -86,6 +86,7 @@ def test_feature_type_display_names_say_what_the_geometry_is():
     assert names["buffer_area"] == "approximate circular area (not a real property boundary)"
     assert names["registered_boundary"] == "registered property boundary"
     assert "may not be a farm" in names["osm_landuse"] and names["user_polygon"] == "user-provided polygon"
+    assert names["rural_property"] == "rural property boundary (provided by the user)"
 
 
 def test_pending_instructions_switch_flows_in_the_same_reply_without_narrating_cancellations():

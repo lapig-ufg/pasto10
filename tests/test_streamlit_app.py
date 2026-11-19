@@ -233,12 +233,12 @@ def test_agent_turn_uses_the_session_id_as_user_id(monkeypatch):
 SQUARE = {"type": "Polygon", "coordinates": [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]]}
 
 
-def test_inspect_geojson_accepts_valid_files_and_counts_vertices():
+def test_inspect_geojson_accepts_valid_files():
     from app.frontend import _inspect_geojson
 
-    assert _inspect_geojson(json.dumps({"type": "Feature", "geometry": SQUARE}).encode()) == (None, 5)
-    assert _inspect_geojson(json.dumps({"type": "FeatureCollection", "features": [{"geometry": SQUARE}]}).encode()) == (None, 5)
-    assert _inspect_geojson(json.dumps(SQUARE).encode()) == (None, 5)
+    assert _inspect_geojson(json.dumps({"type": "Feature", "geometry": SQUARE}).encode()) is None
+    assert _inspect_geojson(json.dumps({"type": "FeatureCollection", "features": [{"geometry": SQUARE}]}).encode()) is None
+    assert _inspect_geojson(json.dumps(SQUARE).encode()) is None
 
 
 @pytest.mark.parametrize(
@@ -262,16 +262,16 @@ def test_inspect_geojson_accepts_valid_files_and_counts_vertices():
 def test_inspect_geojson_never_raises_on_hostile_input(raw):
     from app.frontend import _inspect_geojson
 
-    problem, vertices = _inspect_geojson(raw)
-    assert isinstance(problem, str) and problem and vertices == 0
+    problem = _inspect_geojson(raw)
+    assert isinstance(problem, str) and problem
 
 
 def test_inspect_geojson_rejects_too_many_vertices():
     from app.frontend import _inspect_geojson
-    from domain.services.property_sources.user_polygon_source import max_polygon_vertices
+    from domain.services.property_sources.geofile_source import max_geofile_vertices
 
-    ring = [[0.0001 * i, 0.0] for i in range(max_polygon_vertices() + 5)]
-    problem, _ = _inspect_geojson(json.dumps({"type": "Polygon", "coordinates": [ring]}).encode())
+    ring = [[0.0001 * i, 0.0] for i in range(max_geofile_vertices() + 5)]
+    problem = _inspect_geojson(json.dumps({"type": "Polygon", "coordinates": [ring]}).encode())
     assert "too many vertices" in problem
 
 
@@ -303,43 +303,66 @@ def test_uploader_warns_and_discards_hostile_files_without_raising(monkeypatch):
     monkeypatch.setattr(st, "session_state", state)
     monkeypatch.setattr(st, "warning", warnings.append)
     wrapped = _file_uploader(lambda label, *a, **k: uploads)
-    assert wrapped("Upload", type=["png"]) == []
-    assert state["_pending_geojson"]["name"] == "good.geojson"
+    kept = wrapped("Upload", type=["png"])
+    assert [uploaded.name for uploaded in kept] == ["good.geojson"]
+    assert state["_pending_geofile"]["name"] == "good.geojson"
     assert warnings and warnings[0].startswith("_evil_") is False and "\n" not in warnings[0] and "[evil]" not in warnings[0]
-    assert wrapped("Upload", type=["png"]) == []  # rerun: cached verdict, still no exception
+    assert [uploaded.name for uploaded in wrapped("Upload", type=["png"])] == ["good.geojson"]
 
 
-def test_geojson_note_replaces_the_content_in_the_message(monkeypatch):
+def test_uploader_keeps_a_shapefile_zip_for_semente_to_convert(monkeypatch):
+    import streamlit as st
+
+    from app.frontend import _file_uploader
+
+    state = {}
+
+    class Upload:
+        def __init__(self, name, raw):
+            self.name, self._raw = name, raw
+
+        def getvalue(self):
+            return self._raw
+
+    uploads = [Upload("farm.zip", b"PK\x03\x04fake")]
+    monkeypatch.setattr(st, "session_state", state)
+    monkeypatch.setattr(st, "warning", lambda *a, **k: None)
+    wrapped = _file_uploader(lambda label, *a, **k: uploads)
+
+    assert [uploaded.name for uploaded in wrapped("Upload", type=["png"])] == ["farm.zip"]
+    assert state["_pending_geofile"] == {"name": "farm.zip", "format": "zip"}
+
+
+def test_geofile_note_replaces_the_content_in_the_message(monkeypatch):
     import streamlit as st
 
     from app.frontend import _chat_input
 
-    state = {"_pending_geojson": {"name": "farm.geojson", "content": '{"type": "Polygon"}', "vertices": 5}}
+    state = {"_pending_geofile": {"name": "farm.zip", "format": "zip"}}
     monkeypatch.setattr(st, "session_state", state)
-    message = _chat_input(lambda *args, **kwargs: "register this polygon")("Ask")
-    assert message == "register this polygon\n\n[GeoJSON file attached: farm.geojson, 5 vertices]"
-    assert "_pending_geojson" in state
+    message = _chat_input(lambda *args, **kwargs: "register this boundary")("Ask")
+    assert message == "register this boundary\n\n[Geospatial file attached: farm.zip]"
+    assert "_pending_geofile" in state
     assert _chat_input(lambda *args, **kwargs: None)("Ask") is None
 
 
-def test_workflow_run_hands_the_upload_to_the_session_state_and_cleans_it(monkeypatch):
+def test_workflow_run_only_holds_the_session_lock(monkeypatch):
     import streamlit as st
-    from semente.database.session_store import store
 
     from app.frontend import _locked_run
+    from app.test_properties import session_lock
 
     session_id = f"upload-{uuid.uuid4()}"
-    state = {"_pending_geojson": {"name": "f.geojson", "content": "{}", "vertices": 1}}
+    state = {"_pending_geofile": {"name": "f.zip", "format": "zip"}}
     monkeypatch.setattr(st, "session_state", state)
     seen = {}
 
     def fake_run(self, **kwargs):
-        seen["during"] = store.get(session_id, session_id)["session_state"].get("uploaded_geojson")
+        seen["locked"] = session_lock(session_id)._is_owned()
 
     _locked_run(fake_run)(None, session_id=session_id, user_id=session_id, input="x")
-    assert seen["during"] == {"name": "f.geojson", "content": "{}"}
-    assert "uploaded_geojson" not in store.get(session_id, session_id)["session_state"]
-    assert "_pending_geojson" not in state
+    assert seen["locked"] is True
+    assert state == {"_pending_geofile": {"name": "f.zip", "format": "zip"}}
 
 
 def test_session_locks_are_per_session_and_do_not_block_each_other():
