@@ -74,7 +74,8 @@ def fetch_overlay(
     """Downloads the biomass image as a colored transparent overlay (network, Earth Engine).
 
     Args:
-        image (ee.Image): Band ``biomass`` (t DM/ha), masked to productive pasture.
+        image (ee.Image): Band ``biomass`` (t DM/ha), masked to productive pasture
+            (or to the positive biomass pixels of the area when no pasture mask exists).
         stats (BiomassStats): Gives the color stretch (2nd to 98th percentile) and the resolution.
         bounds: EPSG:3857 bounds of the view in meters.
         size (Tuple[int, int]): Output size in pixels.

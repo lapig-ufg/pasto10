@@ -40,13 +40,14 @@ from domain.utils.tool_utils import area_label, area_notes, latest_area_note, lo
 _COMPONENT = "biomass_tools"
 
 
-def _success_text(tool_key: str, feature: Feature, stats: BiomassStats) -> str:
+def _success_text(tool_key: str, feature: Feature, stats: BiomassStats, all_biomass: bool = False) -> str:
     """Renders the ``success`` text and the conditional notes for a measured area.
 
-    Adds ``note_mask_year`` when the pasture mask is older than the period,
-    ``note_time2graze`` when the source is Time2Graze (short, partial coverage)
-    and ``note_partial_year`` when a whole year was requested but only part of
-    it is covered.
+    Adds ``note_no_pasture_mask`` when the map was drawn from all biomass pixels
+    (no pasture mask), ``note_mask_year`` when the pasture mask is older than the
+    period, ``note_time2graze`` when the source is Time2Graze (short, partial
+    coverage) and ``note_partial_year`` when a whole year was requested but only
+    part of it is covered.
     """
     text = get_tool_result_text(
         _COMPONENT, tool_key, "success",
@@ -56,7 +57,9 @@ def _success_text(tool_key: str, feature: Feature, stats: BiomassStats) -> str:
         pasture_percent=stats.pasture_percent, scale_m=stats.scale_m,
     )
     notes = area_notes(_COMPONENT, tool_key, feature, stats.area_ha)
-    if stats.mask_year < stats.year:
+    if all_biomass:
+        notes.append(get_tool_result_text(_COMPONENT, tool_key, "note_no_pasture_mask", area_name=area_label(feature)))
+    elif stats.mask_year < stats.year:
         notes.append(get_tool_result_text(_COMPONENT, tool_key, "note_mask_year", mask_year=stats.mask_year, year=stats.year))
     if stats.source is BiomassSource.TIME2GRAZE:
         notes.append(get_tool_result_text(
@@ -117,9 +120,12 @@ def generate_biomass_map(
 
     Returns:
         ToolResult: The ``success`` text (period, source, mean and total) plus
-        the map image (JPEG or PNG); or the ``no_registered_area``,
+        the map image (JPEG or PNG). When the area has no pasture mask the map
+        shows every positive biomass pixel of the area instead; only when there
+        is no biomass either does it return the ``no_registered_area``,
         ``area_not_found``, ``year_unavailable``, ``month_unavailable``,
-        ``no_pasture``, ``earth_engine_unavailable`` or ``error`` instructions (no image).
+        ``no_pasture``, ``earth_engine_unavailable`` or ``error`` instructions
+        (no image).
 
     Side effects:
         None on ``session_state``. Queries Earth Engine and downloads tiles.
@@ -132,10 +138,17 @@ def generate_biomass_map(
         if failure is not None:
             return failure
         biomass, roi = build_biomass(feature, year, month)
-        stats = measure_biomass(biomass, roi)
+        all_biomass = False
+        try:
+            stats = measure_biomass(biomass, roi)
+        except NoPastureBiomass:
+            log_warning(f"{tool_key}: no pasture mask in the area; using all biomass pixels")
+            biomass, roi = build_biomass(feature, year, month, mask_to_pasture=False)
+            stats = measure_biomass(biomass, roi)
+            all_biomass = True
         rendered = render_biomass_map(feature, biomass.image, stats)
         image = Image(content=rendered.content, format=rendered.format, mime_type=rendered.mime_type)
-        return ToolResult(content=with_note(_success_text(tool_key, feature, stats), latest_area_note(run_context, area_name, feature)), images=[image])
+        return ToolResult(content=with_note(_success_text(tool_key, feature, stats, all_biomass), latest_area_note(run_context, area_name, feature)), images=[image])
     except Exception as error:
         return _handle_known_errors(error, tool_key, feature)
 

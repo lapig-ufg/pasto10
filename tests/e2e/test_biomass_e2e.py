@@ -80,8 +80,13 @@ def test_biomass_tools_over_global_properties(item):
                 biomass.get_biomass_total(feature, **kwargs)
             result = biomass_tools.get_biomass_total(run_context=context, **kwargs)
             assert "no productive pasture" in result.content and "Mean:" not in result.content
-        assert not biomass_tools.generate_biomass_map(run_context=context).images
-        row["mean"] = "no_pasture"
+        map_result = biomass_tools.generate_biomass_map(run_context=context)
+        if map_result.images:
+            assert "full biomass image is being displayed" in map_result.content
+            row["mean"] = "no_pasture_map"
+        else:
+            assert "no productive pasture" in map_result.content
+            row["mean"] = "no_pasture"
         assert context.session_state == registered
         return
 

@@ -163,8 +163,33 @@ def test_build_masks_with_grassland_and_positive_productivity(fake_ee, monkeypat
     image, _roi = biomass.build_biomass(_feature(), 2010, None)
 
     assert any(name == "updateMask" for name, _ in image.image.calls)
+    assert any(name == "clip" for name, _ in image.image.calls)
     assert any(name == "gt" and args == (0,) for name, args in calls)
     assert image.period.mask_year == 2010 and image.n_images is None
+
+
+def test_build_without_pasture_mask_keeps_only_positive_biomass(fake_ee, monkeypatch):
+    calls = []
+    monkeypatch.setattr(biomass, "_gpp_biomass", lambda year: FakeImage(calls))
+    monkeypatch.setattr(biomass, "_mask_image", lambda mask_year: pytest.fail("no pasture mask should be built"))
+
+    image, _roi = biomass.build_biomass(_feature(), 2010, None, mask_to_pasture=False)
+
+    assert any(name == "gt" and args == (0,) for name, args in calls)
+    assert any(name == "updateMask" for name, args in image.image.calls)
+    assert any(name == "clip" for name, args in image.image.calls)
+    assert image.coverage is None
+    assert image.key[-1] == "all-biomass"
+
+
+def test_all_biomass_stats_use_a_distinct_cache_key(fake_ee):
+    masked, _ = biomass.build_biomass(_feature(), 2010, None)
+    all_biomass, _ = biomass.build_biomass(_feature(), 2010, None, mask_to_pasture=False)
+
+    stats = biomass.measure_biomass(all_biomass, "roi")
+
+    assert masked.key != all_biomass.key
+    assert stats.total_t == 3500.0 and stats.pasture_ha == 200.0
 
 
 def test_gpp_biomass_applies_the_conversion_factor(monkeypatch):

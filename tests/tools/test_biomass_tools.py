@@ -94,6 +94,49 @@ def test_no_mask_note_when_the_mask_is_current(fake_service):
     assert "grassland map of" not in biomass_tools.get_biomass_total(run_context=_context("A")).content
 
 
+def test_map_without_pasture_uses_all_biomass_pixels(monkeypatch, fake_service):
+    calls = []
+
+    def build(feature, year, month, mask_to_pasture=True):
+        calls.append(mask_to_pasture)
+        return BiomassImage("image", None, None, ()), "roi"
+
+    def measure(biomass, roi):
+        if len(calls) == 1:
+            raise NoPastureBiomass()
+        return fake_service[1]["value"]
+
+    rendered = []
+    monkeypatch.setattr(biomass_tools, "build_biomass", build)
+    monkeypatch.setattr(biomass_tools, "measure_biomass", measure)
+    monkeypatch.setattr(
+        biomass_tools, "render_biomass_map",
+        lambda feature, image, stats_: rendered.append(image) or RenderedImage(b"\xff\xd8\xffjpeg", "jpeg", "image/jpeg"),
+    )
+
+    result = biomass_tools.generate_biomass_map(run_context=_context("Dry"))
+
+    assert result.images and calls == [True, False] and rendered == ["image"]
+    assert "full biomass image is being displayed" in result.content
+    assert "no pasture mask" in result.content
+    assert "grassland map of" not in result.content
+
+
+def test_map_without_pasture_or_biomass_still_reports_no_pasture(monkeypatch, fake_service):
+    def build(*args, **kwargs):
+        return BiomassImage("image", None, None, ()), "roi"
+
+    def measure(*args, **kwargs):
+        raise NoPastureBiomass()
+
+    monkeypatch.setattr(biomass_tools, "build_biomass", build)
+    monkeypatch.setattr(biomass_tools, "measure_biomass", measure)
+
+    result = biomass_tools.generate_biomass_map(run_context=_context("Dry"))
+
+    assert not result.images and "no productive pasture" in result.content
+
+
 def test_name_year_and_month_are_forwarded(fake_service):
     run_context = _context("North", "South")
 

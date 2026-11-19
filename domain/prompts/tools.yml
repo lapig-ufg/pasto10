@@ -451,6 +451,8 @@ biomass_tools:
       Time2Graze, which covers only recent months and part of the world. Never pick a month or a year on your own.
 
       The values are accumulated dry-matter production of the period in t DM/ha, NOT standing biomass and NOT available forage.
+      When the Global Pasture Watch grassland map has no pasture in the area, the map and figures cover every pixel with
+      biomass data in the area instead of only pasture.
 
       Args:
           area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
@@ -471,6 +473,8 @@ biomass_tools:
         This period comes from Time2Graze: it covers only {days} days ({start} to {end}) from {n_images} image(s), recent data with partial coverage, so say that the figures are short-period and indicative.
       note_partial_year: |
         The user asked for {year}, but the data cover only part of that year, from {start} to {end} ({days} days): make clear that the figures are NOT for the whole year, give these dates and days, and never present them as an annual value.
+      note_no_pasture_mask: |
+        The Global Pasture Watch grassland map has no pasture in "{area_name}", so no pasture mask was available and the full biomass image is being displayed instead. The map and figures cover every pixel with biomass data inside the area, not only pasture. Tell the user this explicitly and do not present the figures as pasture figures.
       note_approximate_area: |
         The analyzed area is an approximate circle, not a real property boundary: say so once, briefly.
       note_area_difference: |
