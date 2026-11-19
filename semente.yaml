@@ -12,7 +12,7 @@ features:
   summarization: true
   guardrails: true
   terms-acceptance:
-    enable: true
+    enable: false
     file: domain/terms.md
 models:
   primary: { provider: google, id: gemini-3.5-flash-lite }
