@@ -316,6 +316,7 @@ def test_uploader_keeps_a_shapefile_zip_for_semente_to_convert(monkeypatch):
     from app.frontend import _file_uploader
 
     state = {}
+    seen = {}
 
     class Upload:
         def __init__(self, name, raw):
@@ -327,10 +328,16 @@ def test_uploader_keeps_a_shapefile_zip_for_semente_to_convert(monkeypatch):
     uploads = [Upload("farm.zip", b"PK\x03\x04fake")]
     monkeypatch.setattr(st, "session_state", state)
     monkeypatch.setattr(st, "warning", lambda *a, **k: None)
-    wrapped = _file_uploader(lambda label, *a, **k: uploads)
+
+    def original(label, *args, **kwargs):
+        seen.update(kwargs)
+        return uploads
+
+    wrapped = _file_uploader(original)
 
     assert [uploaded.name for uploaded in wrapped("Upload", type=["png"])] == ["farm.zip"]
     assert state["_pending_geofile"] == {"name": "farm.zip", "format": "zip"}
+    assert {"zip", "rar", "kmz", "kml", "geojson", "json"} <= set(seen["type"])
 
 
 def test_geofile_note_replaces_the_content_in_the_message(monkeypatch):

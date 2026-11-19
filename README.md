@@ -154,6 +154,8 @@ The chat UI is the Streamlit chat that ships with Semente, wrapped by `app/strea
 scripts/run_local.sh
 ```
 
+> **Use this entrypoint, not `semente launch streamlit`.** The Semente launcher starts the framework's generic web app (`semente/interfaces/streamlit/streamlit_webapp.py`), which bypasses `app/frontend.py`: its uploader only offers images and audio, so a `.zip` shapefile is rejected with "application/zip files are not allowed". Pasto10's uploader, labels, per-session lock and geofile conversion live in `app/streamlit_app.py`; `scripts/run_local.sh` and `compose.yaml` run that entrypoint.
+
 The script reads only `GOOGLE_API_KEY` and `GEE_*` from the env file (pass another file as the first argument), runs with SQLite and starts `streamlit run app/streamlit_app.py` on port 8501 (`PORT=8600 scripts/run_local.sh` to change it; extra arguments are passed to Streamlit). With Docker, `docker compose up` runs the same entrypoint. Open http://localhost:8501 and enter anonymously.
 
 **Quick tests with the 15 test properties.** Once signed in, the sidebar has a "Test properties" box: pick one of the properties of the table below and click "Use this property". It is registered in your session right away: the synthetic demo registry parcel that contains the point (named `<property> - DEMO-XXX-0001`, origin `registered_boundary`; the message shows name, area and "synthetic demo parcel"), or an approximate circle for the two negative controls, which have no parcel and, outside production (`APP_ENV` other than `production`), onboarding is completed automatically (terms accepted and a test persona), so you can go straight to "show the pasture map" or "biomass of the last years". If the direct registration is not possible, the button sends a chat message asking the assistant to register it. Property data comes from `domain/data/test_properties.json`. The picker, the automatic onboarding and the "Debug Mode" toggle exist only when `APP_ENV=development` is set explicitly (`scripts/run_local.sh` and `compose.yaml` set it; the Dockerfile does not) or `PASTO10_TEST_PICKER=1` opts the picker in; a missing `APP_ENV` leaves them off.
@@ -225,7 +227,7 @@ Boundaries attached as shapefile `.zip`/`.rar`, KMZ, KML or GeoJSON are converte
 - `PASTO10_MAX_GEOFILE_REPAIR_VERTICES` — total budget for repairing invalid parts (default 200,000).
 - `PASTO10_GEOFILE_TIMEOUT` — seconds the guarded child process may run (default 15).
 
-A GeoJSON pasted in the chat keeps the stricter pasted-input limits (`PASTO10_MAX_POLYGON_VERTICES`, `PASTO10_MAX_POLYGON_HA`). `.rar` needs an extractor in `PATH` (`unrar`, `unar` or `bsdtar`).
+A GeoJSON pasted in the chat keeps the stricter pasted-input limits (`PASTO10_MAX_POLYGON_VERTICES`, `PASTO10_MAX_POLYGON_HA`). `.rar` needs an extractor in `PATH` (`unrar`, `unar` or `bsdtar`). The uploader itself is part of Pasto10's entrypoint (`app/streamlit_app.py`): `semente launch streamlit` runs the generic Semente UI, whose uploader does not accept geofiles.
 
 Terms of use:
 
