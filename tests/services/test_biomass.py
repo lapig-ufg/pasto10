@@ -324,3 +324,23 @@ def test_time2graze_stats_report_the_spatial_data_coverage_and_annual_stats_do_n
     annual = biomass.get_biomass_total(_feature(), 2020, None)
 
     assert monthly.data_coverage == 0.8 and annual.data_coverage is None
+
+
+def test_transect_measurement_extrapolates_the_line_mean_to_the_property_area(monkeypatch):
+    from domain.schemas.biomass import BiomassStats
+    from domain.services.geospatial.transect import build_transect
+
+    feature = build_transect(-15.5, -47.5, -15.51, -47.51).model_copy(update={"total_area": 500.0})
+    sampled = BiomassStats(
+        source=BiomassSource.GPW_ANNUAL, period_label="2025", start="2025-01-01", end="2025-12-31",
+        mean_t_ha=10.0, total_t=20.0, p02_t_ha=5.0, p98_t_ha=15.0, pasture_ha=1.0,
+        area_ha=2.0, scale_m=30, mask_year=2022, year=2025, days_covered=365,
+    )
+    monkeypatch.setattr(biomass, "initialize_ee", lambda: None)
+    monkeypatch.setattr(biomass, "build_biomass", lambda feature, year, month: ("image", "corridor"))
+    monkeypatch.setattr(biomass, "measure_biomass", lambda image, roi: sampled)
+
+    stats = biomass.get_biomass_total(feature, None, None)
+
+    assert stats.mean_t_ha == 10.0 and stats.total_t == 5000.0
+    assert stats.pasture_ha == 250.0 and stats.area_ha == 500.0 and stats.pasture_percent == 50.0

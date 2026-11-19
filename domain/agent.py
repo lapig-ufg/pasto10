@@ -14,6 +14,7 @@ from semente.configs.prompts import get_agent_config
 
 from domain.schemas.candidate import PropertyCandidate
 from domain.schemas.feature import Feature
+from domain.services.geospatial.transect import MAX_TOTAL_AREA_HA, MIN_TOTAL_AREA_HA
 from domain.tools.property_tools import (
     cancel_registration,
     complete_registration,
@@ -23,6 +24,7 @@ from domain.tools.property_tools import (
     register_polygon,
     select_candidate,
     start_buffer_registration_by_coordinate,
+    start_transect_registration_by_coordinates,
 )
 from domain.tools.biomass_tools import generate_biomass_map, generate_biomass_video, get_biomass_total
 from domain.tools.report_tools import generate_area_bulletin
@@ -117,17 +119,21 @@ def get_tools(run_context: RunContext) -> list:
 
     - ``"choosing"``: the user must pick one of the numbered candidate polygons
       (``select_candidate``, ``cancel_registration``).
-    - ``"pending"``: the user must confirm or reject the candidate area
+    - ``"pending"``: the user must confirm or reject the candidate area or transect
       (``confirm_registration``, ``cancel_registration``).
-    - ``"final"``: the user must name the confirmed area
+    - ``"final"``: the user must name the confirmed area (and, for a transect,
+      also give the total property area)
       (``complete_registration``, ``cancel_registration``).
-    In these three states the four registration starters (``find_property_candidates``,
-    ``find_property_by_registry_id``, ``register_polygon`` and
-    ``start_buffer_registration_by_coordinate``) are also available: calling one replaces the
+    In these three states the five registration starters (``find_property_candidates``,
+    ``find_property_by_registry_id``, ``register_polygon``,
+    ``start_buffer_registration_by_coordinate`` and
+    ``start_transect_registration_by_coordinates``) are also available: calling one replaces the
     pending registration silently, so a user who brings another area is served in the same reply.
     - otherwise (default): a new area can be registered and registered areas analyzed
-      (``find_property_candidates``, ``find_property_by_registry_id``, ``register_polygon``, ``start_buffer_registration_by_coordinate``, ``generate_pasture_map``,
-      ``get_pasture_area``, ``generate_biomass_map``, ``get_biomass_total``, ``generate_biomass_video``,
+      (``find_property_candidates``, ``find_property_by_registry_id``, ``register_polygon``,
+      ``start_buffer_registration_by_coordinate``, ``start_transect_registration_by_coordinates``,
+      ``generate_pasture_map``, ``get_pasture_area``, ``generate_biomass_map``,
+      ``get_biomass_total``, ``generate_biomass_video``,
       the five weather tools, ``generate_area_bulletin`` and the ``Calculator`` toolkit).
 
     Args:
@@ -144,6 +150,7 @@ def get_tools(run_context: RunContext) -> list:
         find_property_by_registry_id,
         register_polygon,
         start_buffer_registration_by_coordinate,
+        start_transect_registration_by_coordinates,
     ]
     if registration_state == "choosing":
         return [select_candidate, cancel_registration, *starters]
@@ -238,7 +245,9 @@ def get_instructions(run_context: RunContext) -> str:
     elif registration_state == "pending":
         candidates = _candidate_features(session_state)
         candidate_text = summarize_feature(candidates[0]) if candidates else _agent_config["final_candidate_fallback"].strip()
-        state_text = _agent_config["instructions_pending_single"].strip().format(
+        is_transect = bool(candidates) and candidates[0].feature_type == "transect"
+        key = "instructions_pending_transect" if is_transect else "instructions_pending_single"
+        state_text = _agent_config[key].strip().format(
             candidate_text=candidate_text, feature_type=_feature_type_text(candidates),
         )
         instructions = f"{ctx_blocks}\n\n{state_text}".strip()
@@ -246,8 +255,11 @@ def get_instructions(run_context: RunContext) -> str:
     elif registration_state == "final":
         candidates = _candidate_features(session_state)
         candidate_text = summarize_feature(candidates[0]) if candidates else _agent_config["final_candidate_fallback"].strip()
-        state_text = _agent_config["instructions_final"].strip().format(
+        is_transect = bool(candidates) and candidates[0].feature_type == "transect"
+        key = "instructions_final_transect" if is_transect else "instructions_final"
+        state_text = _agent_config[key].strip().format(
             candidate_text=candidate_text, feature_type=_feature_type_text(candidates),
+            min_area_ha=MIN_TOTAL_AREA_HA, max_area_ha=MAX_TOTAL_AREA_HA,
         )
         instructions = f"{ctx_blocks}\n\n{state_text}".strip()
 

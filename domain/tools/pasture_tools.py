@@ -26,7 +26,15 @@ from domain.services.geospatial.pasture import (
     measure_pasture_area,
 )
 from domain.services.geospatial.pasture_image import render_pasture_map
-from domain.utils.tool_utils import area_label, area_notes, latest_area_note, lookup_area, unexpected_error, with_note
+from domain.utils.tool_utils import (
+    area_label,
+    area_notes,
+    latest_area_note,
+    lookup_area,
+    transect_not_supported,
+    unexpected_error,
+    with_note,
+)
 
 _COMPONENT = "pasture_tools"
 
@@ -40,6 +48,18 @@ def _success_text(tool_key: str, feature: Feature, stats: PastureAreaStats) -> s
         area_ha=f"{stats.area_ha:.1f}", pasture_percent=stats.pasture_percent,
     )
     return "\n".join([text, *area_notes(_COMPONENT, tool_key, feature, stats.area_ha)])
+
+
+def _transect_success_text(tool_key: str, feature: Feature, stats: PastureAreaStats) -> str:
+    """Renders the ``success_transect`` text (line mean extrapolated to the property area)."""
+    length_km = float(feature.get_metadata("length_m", 0)) / 1000
+    return get_tool_result_text(
+        _COMPONENT, tool_key, "success_transect",
+        area_name=area_label(feature), year=stats.year, source=stats.source.value,
+        length_km=f"{length_km:g}", total_area_ha=f"{feature.total_area:g}",
+        pasture_ha=f"{stats.pasture_ha:.1f}", cultivated_ha=f"{stats.cultivated_ha:.1f}",
+        natural_ha=f"{stats.natural_ha:.1f}", pasture_percent=stats.pasture_percent,
+    )
 
 
 def _handle_known_errors(error: Exception, tool_key: str) -> ToolResult:
@@ -88,6 +108,9 @@ def generate_pasture_map(run_context: RunContext, area_name: Optional[str] = Non
         feature, failure = lookup_area(run_context, area_name, _COMPONENT, tool_key)
         if failure is not None:
             return failure
+        unsupported = transect_not_supported(feature, _COMPONENT, tool_key)
+        if unsupported is not None:
+            return unsupported
         classification, roi = classify_pasture(feature, year)
         stats = measure_pasture_area(classification, roi)
         rendered = render_pasture_map(feature, classification.image, stats, classification.scale)
@@ -122,6 +145,7 @@ def get_pasture_area(run_context: RunContext, area_name: Optional[str] = None, y
         if failure is not None:
             return failure
         stats = measure_area(feature, year)
-        return ToolResult(content=with_note(_success_text(tool_key, feature, stats), latest_area_note(run_context, area_name, feature)))
+        text = _transect_success_text(tool_key, feature, stats) if feature.feature_type == "transect" else _success_text(tool_key, feature, stats)
+        return ToolResult(content=with_note(text, latest_area_note(run_context, area_name, feature)))
     except Exception as error:
         return _handle_known_errors(error, tool_key)

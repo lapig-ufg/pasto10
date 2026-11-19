@@ -84,3 +84,27 @@ def test_area_label_and_lookup_area_are_shared_by_the_tools():
     _, unknown = lookup_area(context, "lake", "pasture_tools", "get_pasture_area")
     _, empty = lookup_area(StateContext(session_state={}), None, "biomass_tools", "get_biomass_total")
     assert "lake" in unknown.content and "no registered area" in empty.content
+
+
+def test_transect_summary_shows_length_and_pending_total_area():
+    from domain.services.geospatial.transect import build_transect
+    from domain.utils.feature_utils import summarize_feature
+
+    transect = build_transect(-15.5, -47.5, -15.51, -47.51)
+
+    summary = summarize_feature(transect)
+
+    assert "transect line" in summary and "Length:" in summary
+    assert "Total area: to be provided" in summary
+    assert transect.feature_id not in summary and "transect ·" not in summary
+
+
+def test_transect_summary_shows_the_registered_property_area():
+    from domain.services.geospatial.transect import build_transect
+    from domain.utils.feature_utils import summarize_feature
+
+    transect = build_transect(-15.5, -47.5, -15.51, -47.51).model_copy(update={"total_area": 500.0})
+
+    summary = summarize_feature(transect)
+
+    assert "Total area: 500 ha" in summary

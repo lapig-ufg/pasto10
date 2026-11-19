@@ -35,13 +35,21 @@ from domain.services.geospatial.biomass_video import (
     generate_biomass_video as render_video,
 )
 from domain.services.geospatial.gee import EarthEngineUnavailable
-from domain.utils.tool_utils import area_label, area_notes, latest_area_note, lookup_area, unexpected_error, with_note
+from domain.utils.tool_utils import (
+    area_label,
+    area_notes,
+    latest_area_note,
+    lookup_area,
+    transect_not_supported,
+    unexpected_error,
+    with_note,
+)
 
 _COMPONENT = "biomass_tools"
 
 
-def _success_text(tool_key: str, feature: Feature, stats: BiomassStats, all_biomass: bool = False) -> str:
-    """Renders the ``success`` text and the conditional notes for a measured area.
+def _period_notes(tool_key: str, feature: Feature, stats: BiomassStats, all_biomass: bool = False) -> list[str]:
+    """Builds the notes about the source, mask and coverage of a measured period.
 
     Adds ``note_no_pasture_mask`` when the map was drawn from all biomass pixels
     (no pasture mask), ``note_mask_year`` when the pasture mask is older than the
@@ -49,14 +57,7 @@ def _success_text(tool_key: str, feature: Feature, stats: BiomassStats, all_biom
     coverage) and ``note_partial_year`` when a whole year was requested but only
     part of it is covered.
     """
-    text = get_tool_result_text(
-        _COMPONENT, tool_key, "success",
-        area_name=area_label(feature), period=stats.period_label, source=stats.source.value,
-        start=stats.start, end=stats.end, days=stats.days_covered, mean_t_ha=stats.mean_t_ha,
-        total_t=stats.total_t, pasture_ha=f"{stats.pasture_ha:.1f}", area_ha=f"{stats.area_ha:.1f}",
-        pasture_percent=stats.pasture_percent, scale_m=stats.scale_m,
-    )
-    notes = area_notes(_COMPONENT, tool_key, feature, stats.area_ha)
+    notes = []
     if all_biomass:
         notes.append(get_tool_result_text(_COMPONENT, tool_key, "note_no_pasture_mask", area_name=area_label(feature)))
     elif stats.mask_year < stats.year:
@@ -71,7 +72,33 @@ def _success_text(tool_key: str, feature: Feature, stats: BiomassStats, all_biom
                 _COMPONENT, tool_key, "note_partial_year", year=stats.year, start=stats.start, end=stats.end,
                 days=stats.days_covered,
             ))
+    return notes
+
+
+def _success_text(tool_key: str, feature: Feature, stats: BiomassStats, all_biomass: bool = False) -> str:
+    """Renders the ``success`` text and the conditional notes for a measured area."""
+    text = get_tool_result_text(
+        _COMPONENT, tool_key, "success",
+        area_name=area_label(feature), period=stats.period_label, source=stats.source.value,
+        start=stats.start, end=stats.end, days=stats.days_covered, mean_t_ha=stats.mean_t_ha,
+        total_t=stats.total_t, pasture_ha=f"{stats.pasture_ha:.1f}", area_ha=f"{stats.area_ha:.1f}",
+        pasture_percent=stats.pasture_percent, scale_m=stats.scale_m,
+    )
+    notes = area_notes(_COMPONENT, tool_key, feature, stats.area_ha)
+    notes += _period_notes(tool_key, feature, stats, all_biomass)
     return "\n".join([text, *notes])
+
+
+def _transect_success_text(tool_key: str, feature: Feature, stats: BiomassStats) -> str:
+    """Renders the ``success_transect`` text (line mean extrapolated to the property area)."""
+    length_km = float(feature.get_metadata("length_m", 0)) / 1000
+    text = get_tool_result_text(
+        _COMPONENT, tool_key, "success_transect",
+        area_name=area_label(feature), period=stats.period_label, source=stats.source.value,
+        start=stats.start, end=stats.end, days=stats.days_covered, mean_t_ha=stats.mean_t_ha,
+        total_t=stats.total_t, length_km=f"{length_km:g}", total_area_ha=f"{feature.total_area:g}",
+    )
+    return "\n".join([text, *_period_notes(tool_key, feature, stats)])
 
 
 def _handle_known_errors(error: Exception, tool_key: str, feature: Optional[Feature]) -> ToolResult:
@@ -137,6 +164,9 @@ def generate_biomass_map(
         feature, failure = lookup_area(run_context, area_name, _COMPONENT, tool_key)
         if failure is not None:
             return failure
+        unsupported = transect_not_supported(feature, _COMPONENT, tool_key)
+        if unsupported is not None:
+            return unsupported
         biomass, roi = build_biomass(feature, year, month)
         all_biomass = False
         try:
@@ -181,7 +211,9 @@ def get_biomass_total(
         feature, failure = lookup_area(run_context, area_name, _COMPONENT, tool_key)
         if failure is not None:
             return failure
-        return ToolResult(content=with_note(_success_text(tool_key, feature, measure_total(feature, year, month)), latest_area_note(run_context, area_name, feature)))
+        stats = measure_total(feature, year, month)
+        text = _transect_success_text(tool_key, feature, stats) if feature.feature_type == "transect" else _success_text(tool_key, feature, stats)
+        return ToolResult(content=with_note(text, latest_area_note(run_context, area_name, feature)))
     except Exception as error:
         return _handle_known_errors(error, tool_key, feature)
 
@@ -217,6 +249,9 @@ def generate_biomass_video(run_context: RunContext, area_name: Optional[str] = N
         feature, failure = lookup_area(run_context, area_name, _COMPONENT, tool_key)
         if failure is not None:
             return failure
+        unsupported = transect_not_supported(feature, _COMPONENT, tool_key)
+        if unsupported is not None:
+            return unsupported
         video = render_video(feature, years)
         key = "success_monthly" if video.mode == "monthly" else "success_annual_fallback"
         content = get_tool_result_text(

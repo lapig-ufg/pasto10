@@ -9,10 +9,14 @@ from semente.configs.prompts import get_agent_config
 from domain import domain_spec
 from domain.agent import get_instructions, get_tools
 from domain.services.geospatial.geometry import build_buffered_area
+from domain.services.geospatial.transect import MAX_TOTAL_AREA_HA, MIN_TOTAL_AREA_HA, build_transect
 from domain.utils.feature_utils import set_registered_features, summarize_feature
 from domain.schemas.feature import FeatureMetadata, RegisteredFeatures
 
-STARTERS = {"find_property_candidates", "find_property_by_registry_id", "register_polygon", "start_buffer_registration_by_coordinate"}
+STARTERS = {
+    "find_property_candidates", "find_property_by_registry_id", "register_polygon",
+    "start_buffer_registration_by_coordinate", "start_transect_registration_by_coordinates",
+}
 WEATHER_TOOLS = {
     "get_monthly_precipitation_forecast", "get_daily_precipitation_forecast", "get_rain_season_onset_forecast",
     "get_dry_season_onset_forecast", "get_temperature_forecast",
@@ -48,7 +52,7 @@ def test_domain_spec_wires_dynamic_callables():
     "registration_state, expected",
     [
         (None, {
-            "find_property_candidates", "find_property_by_registry_id", "register_polygon", "start_buffer_registration_by_coordinate", "generate_pasture_map", "get_pasture_area",
+            "find_property_candidates", "find_property_by_registry_id", "register_polygon", "start_buffer_registration_by_coordinate", "start_transect_registration_by_coordinates", "generate_pasture_map", "get_pasture_area",
             "generate_biomass_map", "get_biomass_total", "generate_biomass_video", *WEATHER_TOOLS, "generate_area_bulletin", *CALCULATOR_TOOLS,
         }),
         ("choosing", {"select_candidate", "cancel_registration", *STARTERS}),
@@ -87,6 +91,7 @@ def test_feature_type_display_names_say_what_the_geometry_is():
     assert names["registered_boundary"] == "registered property boundary"
     assert "may not be a farm" in names["osm_landuse"] and names["user_polygon"] == "user-provided polygon"
     assert names["rural_property"] == "rural property boundary (provided by the user)"
+    assert "transect" in names["transect"] and "not a property boundary" in names["transect"]
 
 
 def test_pending_instructions_switch_flows_in_the_same_reply_without_narrating_cancellations():
@@ -102,7 +107,10 @@ def test_pending_instructions_switch_flows_in_the_same_reply_without_narrating_c
 def test_every_registration_state_lets_the_user_switch_to_another_area(key):
     text = _agent_config[key]
 
-    for tool in ("find_property_candidates", "register_polygon", "find_property_by_registry_id", "start_buffer_registration_by_coordinate"):
+    for tool in (
+        "find_property_candidates", "register_polygon", "find_property_by_registry_id",
+        "start_buffer_registration_by_coordinate", "start_transect_registration_by_coordinates",
+    ):
         assert tool in text
     assert "IN THE SAME REPLY" in text
 
@@ -226,3 +234,32 @@ def test_biomass_rule_allows_stocking_capacity_only_through_the_skill():
 
     assert "EXCEPT by following the `ua-calculator` skill" in default
     assert "never by multiplying a month by 12" in default
+
+
+def _transect():
+    return build_transect(-15.5, -47.5, -15.51, -47.51)
+
+
+@pytest.mark.parametrize("registration_state", ["pending", "final"])
+def test_transect_states_use_the_transect_instructions(registration_state):
+    transect = _transect()
+    run_context = _context(registration_state=registration_state, candidate_properties=[transect.model_dump()])
+
+    instructions = get_instructions(run_context)
+
+    assert "Transect" in instructions or "transect" in instructions
+    assert "total area of the property" in instructions
+    if registration_state == "final":
+        assert str(MIN_TOTAL_AREA_HA) in instructions and str(int(MAX_TOTAL_AREA_HA)) in instructions
+    assert "buffer_area" not in instructions
+    assert transect.feature_id not in instructions
+    assert instructions.endswith(OUTPUT_CONTRACT)
+
+
+def test_default_instructions_describe_transects_and_their_limits():
+    default = _agent_config["instructions_default"]
+
+    assert "start_transect_registration_by_coordinates" in default
+    assert "sampling line" in default
+    assert "total area of the property" in default
+    assert "generate_pasture_map" in default and "generate_biomass_map" in default

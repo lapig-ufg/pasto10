@@ -14,6 +14,7 @@ from PIL import Image
 
 from domain.services.geospatial import basemap, image
 from domain.services.geospatial.geometry import build_buffered_area
+from domain.services.geospatial.transect import build_transect
 
 PNG_SIGNATURE = b"\x89PNG"
 JPEG_SIGNATURE = b"\xff\xd8\xff"
@@ -326,3 +327,25 @@ def test_session_is_closed_at_exit():
     source = inspect.getsource(basemap)
 
     assert "atexit.register(_SESSION.close)" in source
+
+
+def test_transect_image_over_basemap_is_jpeg_with_attribution(online_tiles, attribution_spy, label_spy):
+    feature = build_transect(-15.5, -47.5, -15.51, -47.51)
+
+    rendered = image.render_transect_image(feature)
+
+    assert rendered.content.startswith(JPEG_SIGNATURE)
+    assert (rendered.format, rendered.mime_type) == ("jpeg", "image/jpeg")
+    assert attribution_spy == [basemap.ESRI_WORLD_IMAGERY.attribution]
+    assert any("Length" in text and "Total area to be provided" in text for text in label_spy)
+
+
+def test_transect_image_offline_is_png_with_neutral_background(attribution_spy):
+    feature = build_transect(-15.5, -47.5, -15.51, -47.51)
+
+    rendered = image.render_transect_image(feature)
+
+    assert rendered.content.startswith(PNG_SIGNATURE)
+    decoded = _decode(rendered.content)
+    assert decoded.size == image.IMAGE_SIZE
+    assert attribution_spy == []

@@ -349,10 +349,12 @@ def build_biomass(
             pixel of the area (used by the map when the area has no pasture).
 
     Returns:
-        tuple: (BiomassImage, the area as ee.Geometry). The image is clipped to
-        the area; pixels outside the Global Pasture Watch grassland mask or
-        without productivity are masked, unless ``mask_to_pasture`` is False
-        (then only pixels without productivity are masked).
+        tuple: (BiomassImage, the area as ee.Geometry). For a transect, the
+        returned geometry is the sampling corridor (the line buffered by half
+        the analysis scale). The image is clipped to the area; pixels outside
+        the Global Pasture Watch grassland mask or without productivity are
+        masked, unless ``mask_to_pasture`` is False (then only pixels without
+        productivity are masked).
 
     Raises:
         EarthEngineUnavailable: If Earth Engine cannot be initialized.
@@ -360,6 +362,8 @@ def build_biomass(
     """
     roi = pasture.feature_geometry(feature)
     period = resolve_biomass_period(year, month)
+    if feature.is_line:
+        roi = pasture.transect_corridor(feature, period.scale, base=roi)
     n_images = None
     if period.source is BiomassSource.TIME2GRAZE:
         n_images = _t2g_count(roi, period.start, period.end)
@@ -447,8 +451,34 @@ def measure_biomass(biomass: BiomassImage, roi: "ee.Geometry") -> BiomassStats:
     )
 
 
+def _extrapolate_biomass(sampled: BiomassStats, total_area_ha: float) -> BiomassStats:
+    """Scales a transect corridor measurement to the property's total area.
+
+    The mean dry-matter production measured in the corridor is multiplied by
+    ``total_area_ha``. The productive-pasture share of the corridor scales the
+    reported pasture area to the same total, so ``pasture_percent`` remains
+    the mean share found along the transect.
+
+    Args:
+        sampled (BiomassStats): Corridor measurement (``area_ha`` is the corridor area).
+        total_area_ha (float): Total area of the property in hectares.
+
+    Returns:
+        BiomassStats: Property-level estimate with ``area_ha = total_area_ha``.
+    """
+    factor = total_area_ha / sampled.area_ha if sampled.area_ha > 0 else 0.0
+    return sampled.model_copy(update={
+        "total_t": round(sampled.mean_t_ha * total_area_ha, 2),
+        "pasture_ha": round(sampled.pasture_ha * factor, 2),
+        "area_ha": round(total_area_ha, 2),
+    })
+
+
 def get_biomass_total(feature: Feature, year: Optional[int] = None, month: Optional[int] = None) -> BiomassStats:
     """Measures the dry-matter production of a registered area for a period.
+
+    For a transect, the line corridor is measured and its mean production is
+    extrapolated to the property's total area (``feature.total_area``).
 
     The caches are consulted before the image is built; period resolution may
     query Earth Engine (the Time2Graze range is cached for a day).
@@ -468,6 +498,10 @@ def get_biomass_total(feature: Feature, year: Optional[int] = None, month: Optio
         Exception: Any Earth Engine computation error.
     """
     initialize_ee()
+    if feature.is_line:
+        biomass, roi = build_biomass(feature, year, month)
+        return _extrapolate_biomass(measure_biomass(biomass, roi), feature.total_area)
+
     period = resolve_biomass_period(year, month)
     key = _stats_key(pasture.geometry_key(feature), period)
     cached = _stats_cache.peek(key) or _load_stats(key)

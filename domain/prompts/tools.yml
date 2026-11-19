@@ -155,6 +155,44 @@ property_tools:
         Mention that the radius is {radius} m and that they can choose another radius between {min_radius} and {max_radius} m (default: {default_radius} m).
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
+  start_transect_registration_by_coordinates:
+    description: |
+      Starts the registration of a transect: a straight sampling line between two coordinates
+      (start and end).
+
+      Use this tool when the user gives two coordinates and wants to monitor or analyze a line,
+      transect or route across the property. A transect is a sampling line, NOT a property
+      boundary. The pasture and dry-matter amounts of a transect extrapolate the mean measured
+      along the line to the total area of the property, which the user provides after the line
+      is confirmed.
+
+      Coordinates must be in decimal degrees. Convert a coordinate given in degrees, minutes and
+      seconds (DMS) before calling: decimal = |D| + M/60 + S/3600, then make it negative for S/W
+      (or when D is already negative). Minutes may also come as decimals (e.g. 15°30.5'S).
+      Examples: 15°30'0"S 47°30'0"W -> -15.5, -47.5; -15°30'0" -> -15.5.
+
+      Args:
+          start_latitude (float): Start latitude in decimal degrees (between -85 and 85).
+          start_longitude (float): Start longitude in decimal degrees (between -180 and 180).
+          end_latitude (float): End latitude in decimal degrees (between -85 and 85).
+          end_longitude (float): End longitude in decimal degrees (between -180 and 180).
+
+      Returns:
+          ToolResult: Confirmation image of the line and instructions for the next step.
+    results:
+      confirm_transect: |
+        The transect line was drawn and its image was sent to the user:
+        > {area_details}
+        Ask whether this transect line is the one they want to analyze. A transect is a sampling
+        line, NOT a property boundary, and must not be called "property" or "farm". When the user
+        confirms, call `confirm_registration`; then ask for a friendly name AND the total area of
+        the property in hectares (both are needed to finish). The line is {length_km} km long.
+      invalid_coordinates: |
+        The coordinate ({latitude}, {longitude}) is not valid. Apologize to the user and explain that the latitude must be between -{max_latitude} and {max_latitude} degrees and the longitude between -180 and 180 degrees (decimal degrees), then ask for both coordinates again.
+      invalid_length: |
+        The distance between the two coordinates is {length_m} m, which is not accepted. Apologize and explain that a transect must be between {min_length_m} and {max_length_m} meters long, then ask for corrected start and end coordinates.
+      error: |
+        An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
   find_property_candidates:
     description: |
       Looks for candidate property polygons around a coordinate and shows them numbered on an image, so the user can
@@ -315,8 +353,13 @@ property_tools:
       `name` parameter — the registration is then completed immediately,
       without waiting for another turn.
 
+      For a transect, the total area of the property in hectares is also
+      required. Pass it in `total_area_ha` when the user gives it in the same
+      message; otherwise ask for it after the confirmation.
+
       Args:
           name (str, optional): Name for the area, only when the user already gave one.
+          total_area_ha (float, optional): Total property area in hectares, only for a transect.
     results:
       no_pending_area: |
         There is no area pending confirmation. Ask the user for the coordinate of the area they want to register first.
@@ -324,25 +367,43 @@ property_tools:
         The area was confirmed:
         > {area_details}
         Ask the user what name they would like to give this area to complete the registration.
+      confirmed_prompt_name_area: |
+        The transect was confirmed:
+        > {area_details}
+        Ask the user for a friendly name AND the total area of the property in hectares. Both are needed to complete the registration. The total area is the whole property crossed by the line, not the length of the transect.
+      confirmed_prompt_area: |
+        The transect was confirmed and the name "{name}" was recorded:
+        > {area_details}
+        The total area of the property in hectares is still needed. Ask for it (between {min_area_ha} and {max_area_ha} ha) to complete the registration.
+      invalid_total_area: |
+        The total property area of {total_area_ha} ha is not accepted. Apologize and explain that it must be between {min_area_ha} and {max_area_ha} hectares, then ask for a valid value.
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
   complete_registration:
     description: |
       Completes the registration of the confirmed area with the name chosen by the user.
 
-      Use this tool when the user tells you the name of the area.
+      Use this tool when the user tells you the name of the area. For a
+      transect, the total area of the property in hectares is also required;
+      pass it in `total_area_ha` (or rely on the area already given during
+      confirmation).
 
       Args:
           name (str): The name chosen by the user for the area.
+          total_area_ha (float, optional): Total property area in hectares, only for a transect.
     results:
       no_pending_area: |
         There is no area pending registration. Ask the user for the coordinate of the area they want to register first.
+      needs_total_area: |
+        The transect "{name}" still needs the total area of the property in hectares. Ask for it (between {min_area_ha} and {max_area_ha} ha) and then call `complete_registration` again with the name and `total_area_ha`.
+      invalid_total_area: |
+        The total property area of {total_area_ha} ha is not accepted. Apologize and explain that it must be between {min_area_ha} and {max_area_ha} hectares, then ask for a valid value.
       registration_complete: |
         Area registered successfully.
         Name: {name}
         Details: {area_details}
 
-        Tell the user, in one short message, that the area was registered with this name. Do not ask again whether this is the area; offer instead what they can do next (pasture map and area, dry-matter production, weather).
+        Tell the user, in one short message, that the area was registered with this name. Do not ask again whether this is the area; offer instead what they can do next (pasture map and area, dry-matter production, weather). For a transect, say that the amount analyses estimate the property total from the mean measured along the line; the map, video and bulletin tools are not available for it.
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
   cancel_registration:
@@ -369,6 +430,7 @@ pasture_tools:
       The default year is 2022, the latest Global Pasture Watch map; pass a later year only when the user asks
       for it, which returns an experimental on-the-fly estimate.
       The map distinguishes cultivated grassland from natural/semi-natural grassland.
+      This tool is not available for a transect line: use `get_pasture_area` instead.
 
       Args:
           area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
@@ -389,6 +451,8 @@ pasture_tools:
         The analyzed area is an approximate circle, not a real property boundary: say so once, briefly.
       note_area_difference: |
         The registered area is {registered_ha} ha and the analyzed area is {analyzed_ha} ha: the difference comes from the raster resolution of the satellite data (explain it in one short sentence).
+      not_available_for_transect: |
+        A pasture map cannot be generated for a transect line: the map tools only work for registered areas (polygons). Explain this briefly and offer the pasture amount instead (`get_pasture_area`), which estimates the property total from the mean measured along the line.
       no_registered_area: |
         The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
       area_not_found: |
@@ -409,6 +473,9 @@ pasture_tools:
       The default year is 2022, the latest Global Pasture Watch map; pass a later year only when the user asks
       for it, which returns an experimental on-the-fly estimate.
 
+      For a transect line, the mean pasture share measured along the line is multiplied by the total
+      area of the property (given at registration) to estimate the pasture area of the whole property.
+
       Args:
           area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
           year (int, optional): Reference year. When omitted, 2022 (the latest Global Pasture Watch year) is used. Years after 2022 give an experimental estimate.
@@ -424,6 +491,14 @@ pasture_tools:
         Report the figures to the user in plain language, always stating the year and the data source.
         Remember that this is satellite-derived and does not replace field verification.
         If the source is the Pasto10 classification, this is an experimental estimate, not an official map (it may also report small amounts of pasture where there is none, in arid or urban areas) and not a measurement: state that clearly, present the figures only as an order of magnitude, say that it can diverge a lot from one year to the next and from the official map (in a validation against official maps, about 90% of the pixels agreed on average, but some areas deviated by several times the official pasture area), do not compare it with earlier years as a trend, and recommend 2022 (the latest Global Pasture Watch year) as the reliable reference.
+      success_transect: |
+        Transect pasture estimate of "{area_name}" for {year} (source: {source}):
+        - Mean pasture share along the {length_km} km transect: {pasture_percent}%
+        - Estimated pasture area for the {total_area_ha} ha of the property: {pasture_ha} ha
+        - Cultivated grassland: {cultivated_ha} ha
+        - Natural/semi-natural grassland: {natural_ha} ha
+        The figures extrapolate the mean share measured along a one-pixel-wide corridor of the transect to the total property area. Report them in plain language with the year and source. Satellite-derived estimates do not replace field verification.
+        If the source is the Pasto10 classification, this is an experimental estimate, not an official map: state that clearly, present the figures only as an order of magnitude, do not compare them with earlier years as a trend, and recommend 2022 as the reliable reference.
       note_approximate_area: |
         The analyzed area is an approximate circle, not a real property boundary: say so once, briefly.
       note_area_difference: |
@@ -453,6 +528,7 @@ biomass_tools:
       The values are accumulated dry-matter production of the period in t DM/ha, NOT standing biomass and NOT available forage.
       When the Global Pasture Watch grassland map has no pasture in the area, the map and figures cover every pixel with
       biomass data in the area instead of only pasture.
+      This tool is not available for a transect line: use `get_biomass_total` instead.
 
       Args:
           area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
@@ -479,6 +555,8 @@ biomass_tools:
         The analyzed area is an approximate circle, not a real property boundary: say so once, briefly.
       note_area_difference: |
         The registered area is {registered_ha} ha and the analyzed area is {analyzed_ha} ha: the difference comes from the raster resolution of the satellite data (explain it in one short sentence).
+      not_available_for_transect: |
+        A dry-matter map cannot be generated for a transect line: the map tools only work for registered areas (polygons). Explain this briefly and offer the dry-matter amount instead (`get_biomass_total`), which estimates the property total from the mean measured along the line.
       no_registered_area: |
         The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
       area_not_found: |
@@ -505,6 +583,9 @@ biomass_tools:
 
       The values are accumulated dry-matter production of the period in t DM/ha, NOT standing biomass and NOT available forage.
 
+      For a transect line, the mean dry-matter production measured along the line is multiplied by the
+      total area of the property (given at registration) to estimate the production of the whole property.
+
       Args:
           area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
           year (int, optional): Reference year (2000-2025 annual; later years use recent Time2Graze data when available).
@@ -518,6 +599,11 @@ biomass_tools:
         - Mean: {mean_t_ha} t DM/ha
         - Total: {total_t} t DM over {pasture_ha} ha of productive pasture ({pasture_percent}% of the {area_ha} ha analyzed)
         Report the figures in plain language, always stating the period and the source. Explain that these are accumulated dry-matter production estimates of the period (not standing biomass or available forage, and not a stocking capacity unless following the ua-calculator skill), and that they are approximate (a general conversion, calibrated for cultivated tropical pastures; elsewhere only an order of magnitude). Never compare annual with monthly figures, nor Global Pasture Watch with Time2Graze figures. Satellite estimates do not replace field verification.
+      success_transect: |
+        Transect dry-matter estimate of "{area_name}", period {period} ({start} to {end}, {days} days), source: {source}.
+        - Mean along the {length_km} km transect: {mean_t_ha} t DM/ha
+        - Estimated total for the {total_area_ha} ha of the property: {total_t} t DM
+        The total extrapolates the mean measured along a one-pixel-wide corridor of the transect to the total property area. Report the figures in plain language with the period and source. Explain that these are accumulated dry-matter production estimates of the period (not standing biomass or available forage, and not a stocking capacity unless following the ua-calculator skill), and that they are approximate (a general conversion, calibrated for cultivated tropical pastures; elsewhere only an order of magnitude). Never compare annual with monthly figures, nor Global Pasture Watch with Time2Graze figures. Satellite estimates do not replace field verification.
       note_mask_year: |
         The pasture mask is the Global Pasture Watch grassland map of {mask_year}, the latest available, older than {year}: mention it briefly.
       note_time2graze: |
@@ -553,6 +639,7 @@ biomass_tools:
       The video is monthly when at least two recent months of Time2Graze data exist over the area (recent data,
       partial coverage); otherwise it falls back to annual Global Pasture Watch frames (the last 10 years by default;
       `years` sets how many, 2 to 12), which is NOT monthly. Never pick the mode yourself.
+      This tool is not available for a transect line: use `get_biomass_total` instead.
 
       Args:
           area_name (str, optional): Name of a registered area. When omitted, the most recently registered area is used.
@@ -569,6 +656,8 @@ biomass_tools:
         State clearly that this video is ANNUAL, NOT monthly: {reason_text} One frame per year was used instead. The colors use the same scale in all frames. The values are accumulated dry-matter production estimates, not standing biomass or available forage. Never compare these annual figures with monthly ones. Satellite estimates do not replace field verification.
       no_pasture: |
         The area "{area_name}" has no productive pasture according to the Global Pasture Watch grassland map, so there is no dry-matter production to animate. Tell the user and do NOT present any video or figures.
+      not_available_for_transect: |
+        A biomass video cannot be generated for a transect line: the video tool only works for registered areas (polygons). Explain this briefly and offer the dry-matter amount instead (`get_biomass_total`), which estimates the property total from the mean measured along the line.
       insufficient_data: |
         There are not enough frames with data for this area to build a video. Tell the user, suggest the static map or the totals instead, and do NOT present any video or figures.
       encoder_unavailable: |
@@ -770,6 +859,8 @@ report_tools:
         - Dry-matter production {period}: mean {mean_t_ha} t DM/ha, total {total_t} t DM
       no_data: |
         There is no pasture or dry-matter data for "{area_name}" (the area may have no productive pasture), so no bulletin was generated. Tell the user and do NOT present any figures.
+      not_available_for_transect: |
+        A PDF bulletin cannot be generated for a transect line: it relies on the map tools, which only work for registered areas (polygons). Explain this briefly and offer the pasture and dry-matter amounts instead (`get_pasture_area` and `get_biomass_total`), which estimate the property totals from the mean measured along the line.
       no_registered_area: |
         The user has no registered area yet. Explain that an area is needed first and ask for the coordinate (latitude/longitude in decimal degrees) and, optionally, the radius of the area to register.
       area_not_found: |

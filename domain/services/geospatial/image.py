@@ -1,7 +1,7 @@
-"""Confirmation image service — renders a buffer area over a basemap.
+"""Confirmation image service — renders areas and transects over a basemap.
 
-Draws the buffer circle, its center, a scale bar, a two-line label
-(coordinate; radius and area) and the basemap attribution on top of the
+Draws the buffer circle or the transect line, its markers, a scale bar, a
+label with the geometry details and the basemap attribution on top of the
 tiles from ``basemap.build_basemap``. Over a tile basemap the image is
 encoded as JPEG (photographic content, much smaller); over the neutral
 fallback background it is encoded as PNG. The result is returned as a
@@ -31,6 +31,9 @@ IMAGE_SIZE = (640, 640)
 NEUTRAL_BACKGROUND = (226, 226, 220)
 BUFFER_OUTLINE = (255, 214, 0, 255)
 BUFFER_FILL = (255, 214, 0, 70)
+TRANSECT_OUTLINE = (255, 214, 0, 255)
+TRANSECT_END = (0, 200, 255, 255)
+TRANSECT_START = (255, 105, 180, 255)
 JPEG_QUALITY = 80
 MIN_ATTRIBUTION_FONT_PX = 12
 _ATTRIBUTION_PADDING = 4
@@ -149,6 +152,50 @@ def draw_center_marker(image: Image.Image, position: Tuple[float, float], radius
     x, y = position
     draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=(220, 30, 30), outline=(255, 255, 255), width=2)
     return marked
+
+
+def draw_transect_overlay(image: Image.Image, points: List[Tuple[float, float]]) -> Image.Image:
+    """Draws a transect line (a black casing plus a solid colored line) on the image.
+
+    Args:
+        image (PIL.Image.Image): Background image (any mode).
+        points: Line vertices in pixel coordinates.
+
+    Returns:
+        PIL.Image.Image: New RGB image with the line composited.
+    """
+    if len(points) < 2:
+        return image.convert("RGB")
+    base = image.convert("RGBA")
+    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    draw.line(points, fill=(0, 0, 0, 200), width=7, joint="curve")
+    draw.line(points, fill=TRANSECT_OUTLINE, width=4, joint="curve")
+    return Image.alpha_composite(base, overlay).convert("RGB")
+
+
+def draw_endpoint_marker(image: Image.Image, position: Tuple[float, float], color: Tuple[int, int, int], radius: int = 6) -> Image.Image:
+    """Draws a round marker with a white ring at a transect endpoint.
+
+    Args:
+        image (PIL.Image.Image): Image to draw on (modified copy is returned).
+        position (Tuple[float, float]): Marker position in pixels.
+        color (Tuple[int, int, int]): Fill color.
+        radius (int): Marker radius in pixels.
+
+    Returns:
+        PIL.Image.Image: New image with the marker drawn.
+    """
+    marked = image.copy()
+    draw = ImageDraw.Draw(marked)
+    x, y = position
+    draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=color, outline=(255, 255, 255), width=2)
+    return marked
+
+
+def _area_text(feature: Feature) -> str:
+    """Returns the total-area label of a transect (``"to be provided"`` until set)."""
+    return f"{feature.total_area:g} ha" if feature.total_area and feature.total_area > 0 else "to be provided"
 
 
 def _scale_bar_length(meters_per_px: float, max_pixels: float) -> int:
@@ -377,6 +424,70 @@ def render_buffer_image(
     image = draw_corner_label(
         image,
         f"{latitude:.5f}, {longitude:.5f}\nRadius {radius:g} m · {feature.total_area:g} ha" + (f"\n{origin_label}" if origin_label else ""),
+    )
+    if provider is not None:
+        image = draw_attribution(image, provider.attribution)
+    return encode(image, with_basemap=provider is not None)
+
+
+def render_transect_image(
+    feature: Feature,
+    size: Tuple[int, int] = IMAGE_SIZE,
+    providers: Optional[Sequence[TileProvider]] = None,
+    origin_label: Optional[str] = None,
+) -> RenderedImage:
+    """Renders the confirmation image of a transect line.
+
+    The image is centered on the line midpoint at the highest zoom where the
+    line fits comfortably. The background comes from tile services (by
+    default Esri World Imagery, then OpenStreetMap; see
+    ``basemap.resolve_providers``); when the network fails or the basemap is
+    disabled the image is still produced over a neutral background. On top of
+    the background it draws the line, start and end markers, a scale bar, a
+    label with the start/end coordinates, length and total area, and — only
+    when a basemap was used — the provider attribution.
+
+    Args:
+        feature (Feature): A transect feature (metadata ``center``, ``radius``,
+            ``start``, ``end`` and ``length_m``).
+        size (Tuple[int, int]): Output (width, height) in pixels.
+        providers (Sequence[TileProvider], optional): Tile providers to try,
+            in order; defaults to ``resolve_providers()`` (read at call time).
+        origin_label (str, optional): Text added as an extra label line.
+
+    Returns:
+        RenderedImage: JPEG (quality 80) over a tile basemap, PNG over the
+        neutral background.
+
+    Raises:
+        ValueError: If the feature lacks valid ``center``/``radius`` metadata.
+    """
+    latitude, longitude = parse_center(feature)
+    radius = float(feature.get_metadata("radius", 0))
+    if radius <= 0:
+        raise ValueError(f"Feature {feature.id} has no valid 'radius' metadata.")
+
+    if providers is None:
+        providers = resolve_providers()
+    max_zoom = min((p.max_zoom for p in providers), default=ESRI_WORLD_IMAGERY.max_zoom)
+    zoom = choose_zoom(latitude, radius * 1.2, size, max_zoom=max_zoom)
+    background, provider = build_basemap(latitude, longitude, zoom, size, providers=providers)
+    if background is None:
+        background = Image.new("RGB", size, NEUTRAL_BACKGROUND)
+
+    points = project_ring(feature.get_coords(), (latitude, longitude), zoom, size)
+    image = draw_transect_overlay(background, points)
+    if points:
+        image = draw_endpoint_marker(image, points[0], TRANSECT_START)
+        image = draw_endpoint_marker(image, points[-1], TRANSECT_END)
+    image = draw_scale_bar(image, meters_per_pixel(latitude, zoom))
+    start = feature.get_metadata("start") or f"{latitude:.5f}, {longitude:.5f}"
+    end = feature.get_metadata("end") or start
+    length_m = float(feature.get_metadata("length_m", 0))
+    image = draw_corner_label(
+        image,
+        f"Start {start}\nEnd {end}\nLength {length_m / 1000:g} km · Total area {_area_text(feature)}"
+        + (f"\n{origin_label}" if origin_label else ""),
     )
     if provider is not None:
         image = draw_attribution(image, provider.attribution)

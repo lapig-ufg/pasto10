@@ -92,6 +92,37 @@ def _polygon_summary(feature: Feature, config: dict) -> str:
         return _safe_summary(feature, config)
 
 
+def _transect_summary(feature: Feature, config: dict) -> str:
+    """Builds the summary of a transect line (start, end, length and total property area).
+
+    Uses the ``transect_summary`` template. The total area is shown as
+    ``"to be provided"`` until the user gives it in the final registration
+    step. Falls back to the safe summary when the metadata or the template is
+    unusable.
+
+    Args:
+        feature (Feature): A transect feature (metadata ``start``, ``end`` and ``length_m``).
+        config (dict): The ``single_agent`` prompt config.
+
+    Returns:
+        str: E.g. ``"transect line · Length: 2.5 km · Total area: 500 ha · Start: ... · End: ..."``.
+    """
+    template = config.get("transect_summary")
+    label = str((config.get("feature_type_names") or {}).get(feature.feature_type) or config.get("feature_type_fallback") or "area").strip()
+    start = feature.get_metadata("start")
+    end = feature.get_metadata("end")
+    try:
+        length_m = float(feature.get_metadata("length_m"))
+        if not template or start is None or end is None:
+            raise ValueError("transect metadata is incomplete")
+        area = f"{feature.total_area:g} ha" if feature.total_area and feature.total_area > 0 else "to be provided"
+        return str(template).strip().format(
+            origin_label=label, length_km=f"{length_m / 1000:g}", area=area, start=start, end=end,
+        )
+    except (KeyError, IndexError, TypeError, ValueError):
+        return _safe_summary(feature, config)
+
+
 def summarize_feature(feature: Feature) -> str:
     """Builds the user-facing one-line summary of a buffer area.
 
@@ -113,6 +144,8 @@ def summarize_feature(feature: Feature) -> str:
         on template errors.
     """
     config = get_agent_config("single_agent") or {}
+    if feature.feature_type == "transect":
+        return _transect_summary(feature, config)
     center = feature.get_metadata("center")
     radius = feature.get_metadata("radius")
     if feature.get_metadata("origin") not in (None, "approximate_circle") and center is not None:

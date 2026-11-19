@@ -48,6 +48,25 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return 2 * EARTH_RADIUS_METERS * math.asin(min(1.0, math.sqrt(a)))
 
 
+def initial_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Computes the initial bearing of the great-circle path between two points.
+
+    Args:
+        lat1 (float): Start latitude in decimal degrees.
+        lon1 (float): Start longitude in decimal degrees.
+        lat2 (float): End latitude in decimal degrees.
+        lon2 (float): End longitude in decimal degrees.
+
+    Returns:
+        float: Bearing in degrees clockwise from north, in [0, 360).
+    """
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    delta_lambda = math.radians(lon2 - lon1)
+    y = math.sin(delta_lambda) * math.cos(phi2)
+    x = math.cos(phi1) * math.sin(phi2) - math.sin(phi1) * math.cos(phi2) * math.cos(delta_lambda)
+    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+
+
 def destination_point(
     latitude: float,
     longitude: float,
