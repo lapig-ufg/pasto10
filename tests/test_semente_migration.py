@@ -25,11 +25,11 @@ def test_manifest_uses_the_current_feature_names():
     assert not {"feedback_workflow", "pii_guardrail"} & set(manifest.features)
 
 
-def test_the_terms_gate_points_at_an_existing_file():
+def test_the_terms_gate_is_disabled_and_points_at_an_existing_file():
     manifest = Manifest.load(ROOT / "semente.yaml")
     terms = manifest.features["terms-acceptance"]
 
-    assert terms.enable is True
+    assert terms.enable is False
     assert (manifest.source_dir / terms.file).is_file()
     assert "Terms of Use" in (ROOT / "domain" / "terms.md").read_text(encoding="utf-8")
 

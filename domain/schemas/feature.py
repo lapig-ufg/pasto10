@@ -11,6 +11,10 @@ from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field
 
+# GeoJSON coordinates of a feature: MultiPolygon nesting (polygons -> rings ->
+# [lon, lat]) or a LineString (a list of [lon, lat] positions).
+FeatureCoords = Union[List[List[List[List[float]]]], List[List[float]]]
+
 
 class FeatureMetadata(BaseModel):
     """A single arbitrary attribute attached to a feature.
@@ -51,11 +55,12 @@ class FeatureMetadata(BaseModel):
 class Feature(BaseModel):
     """General schema representing any geographic feature in the system.
 
-    Every registrable feature — buffer areas today, any future type later —
-    is represented by this single model. Type-specific data lives in the
-    free-form ``metadata`` list; ``feature_type`` holds the neutral key
-    identifying the type (never localized; display names live in
-    ``agents.yml`` under ``feature_type_names``).
+    Every registrable feature — buffer areas, user polygons, transect lines,
+    any future type later — is represented by this single model.
+    Type-specific data lives in the free-form ``metadata`` list;
+    ``feature_type`` holds the neutral key identifying the type (never
+    localized; display names live in ``agents.yml`` under
+    ``feature_type_names``).
 
     The ``feature_id`` is a stable, generated identifier used by the tools;
     the user-chosen display name is stored separately in metadata
@@ -67,9 +72,18 @@ class Feature(BaseModel):
         description="Stable unique identifier of the feature."
     )
 
-    coords: List[List[List[List[float]]]] = Field(
+    coords: FeatureCoords = Field(
         ...,
-        description="Geographic coordinates of the feature (GeoJSON MultiPolygon nesting, [lon, lat] pairs)."
+        description=(
+            "Geographic coordinates of the feature: GeoJSON MultiPolygon nesting "
+            "(polygons -> rings -> [lon, lat] pairs) or a LineString (a list of [lon, lat] pairs)."
+        )
+    )
+
+    geometry_type: str = Field(
+        default="MultiPolygon",
+        description="GeoJSON geometry kind: MultiPolygon (default) or LineString (transect).",
+        examples=["MultiPolygon"]
     )
 
     metadata: List[FeatureMetadata] = Field(
@@ -98,6 +112,11 @@ class Feature(BaseModel):
         """The user-chosen display name (stored as metadata), if any."""
         return self.get_metadata("name")
 
+    @property
+    def is_line(self) -> bool:
+        """True when the feature geometry is a LineString (a transect)."""
+        return self.geometry_type == "LineString"
+
     def get_metadata(self, key: str, default=None):
         """Returns the metadata value stored under a key.
 
@@ -113,12 +132,13 @@ class Feature(BaseModel):
                 return entry.value
         return default
 
-    def get_coords(self) -> List[List[List[List[float]]]]:
-        """Returns the GeoJSON MultiPolygon coordinates of the feature.
+    def get_coords(self) -> FeatureCoords:
+        """Returns the GeoJSON coordinates of the feature.
 
         Returns:
-            List[List[List[List[float]]]]: Polygons -> rings -> ``[lon, lat]``
-            pairs; the first ring of the first polygon is the outer boundary.
+            FeatureCoords: For polygons, polygons -> rings -> ``[lon, lat]``
+            pairs (the first ring of the first polygon is the outer boundary);
+            for a transect, the ``[lon, lat]`` positions of the line.
         """
         return self.coords
 

@@ -6,6 +6,7 @@ result as a Feature.
 """
 
 import math
+from typing import Tuple
 
 from semente.logging import log_error
 from semente.property_sources import BufferSource
@@ -71,6 +72,60 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     d_lambda = math.radians(lon2 - lon1)
     a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
     return 2 * EARTH_RADIUS_METERS * math.asin(min(1.0, math.sqrt(a)))
+
+
+def initial_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Computes the initial bearing of the great-circle path between two points.
+
+    Args:
+        lat1 (float): Start latitude in decimal degrees.
+        lon1 (float): Start longitude in decimal degrees.
+        lat2 (float): End latitude in decimal degrees.
+        lon2 (float): End longitude in decimal degrees.
+
+    Returns:
+        float: Bearing in degrees clockwise from north, in [0, 360).
+    """
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    delta_lambda = math.radians(lon2 - lon1)
+    y = math.sin(delta_lambda) * math.cos(phi2)
+    x = math.cos(phi1) * math.sin(phi2) - math.sin(phi1) * math.cos(phi2) * math.cos(delta_lambda)
+    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+
+
+def destination_point(
+    latitude: float,
+    longitude: float,
+    bearing: float,
+    distance: float,
+) -> Tuple[float, float]:
+    """Computes the point reached from a start coordinate along a bearing.
+
+    Uses the spherical "direct geodesic" formula, which is accurate to well
+    under 1% for the short distances (≤ 1 km) used by buffer areas.
+
+    Args:
+        latitude (float): Start latitude in decimal degrees.
+        longitude (float): Start longitude in decimal degrees.
+        bearing (float): Initial bearing in degrees clockwise from north.
+        distance (float): Distance to travel in meters.
+
+    Returns:
+        Tuple[float, float]: (latitude, longitude) of the destination, with
+        the longitude normalized to [-180, 180).
+    """
+    phi1 = math.radians(latitude)
+    lambda1 = math.radians(longitude)
+    theta = math.radians(bearing)
+    delta = distance / EARTH_RADIUS_METERS
+
+    sin_phi2 = math.sin(phi1) * math.cos(delta) + math.cos(phi1) * math.sin(delta) * math.cos(theta)
+    phi2 = math.asin(sin_phi2)
+    lambda2 = lambda1 + math.atan2(
+        math.sin(theta) * math.sin(delta) * math.cos(phi1),
+        math.cos(delta) - math.sin(phi1) * sin_phi2,
+    )
+    return math.degrees(phi2), normalize_longitude(math.degrees(lambda2))
 
 
 def build_buffered_area(

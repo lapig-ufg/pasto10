@@ -29,10 +29,17 @@ from domain.services.geospatial.basemap import resolve_providers
 from domain.services.geospatial.biomass import BiomassPeriodUnavailable, NoPastureBiomass, build_biomass, measure_biomass
 from domain.services.geospatial.biomass_image import render_biomass_map
 from domain.services.geospatial.gee import EarthEngineUnavailable
-from domain.services.geospatial.image import parse_center, render_buffer_image
+from domain.services.geospatial.image import parse_center, render_buffer_image, render_polygon_image
 from domain.services.geospatial.pasture import YearUnavailable, classify_pasture, measure_pasture_area
 from domain.services.geospatial.pasture_image import render_pasture_map
-from domain.utils.tool_utils import area_label, latest_area_note, lookup_area, unexpected_error, with_note
+from domain.utils.tool_utils import (
+    area_label,
+    latest_area_note,
+    lookup_area,
+    transect_not_supported,
+    unexpected_error,
+    with_note,
+)
 
 _COMPONENT = "report_tools"
 _TOOL = "generate_area_bulletin"
@@ -147,6 +154,9 @@ def generate_area_bulletin(run_context: RunContext, area_name: Optional[str] = N
         feature, failure = lookup_area(run_context, area_name, _COMPONENT, _TOOL)
         if failure is not None:
             return failure
+        unsupported = transect_not_supported(feature, _COMPONENT, _TOOL)
+        if unsupported is not None:
+            return unsupported
         label = area_label(feature)
         sections, reasons, errors = {}, {}, []
         for name, build in (("pasture", _pasture_section), ("biomass", _biomass_section)):
@@ -161,7 +171,11 @@ def generate_area_bulletin(run_context: RunContext, area_name: Optional[str] = N
             return ToolResult(content=_text("no_data", area_name=label))
 
         latitude, longitude = parse_center(feature)
-        location = render_buffer_image(feature)
+        location = (
+            render_polygon_image(feature)
+            if feature.feature_type == "rural_property"
+            else render_buffer_image(feature)
+        )
         attribution = "; ".join(provider.attribution.replace("\n", " ") for provider in resolve_providers()) if location.format == "jpeg" else ""
         pasture = sections.get("pasture")
         biomass = sections.get("biomass")

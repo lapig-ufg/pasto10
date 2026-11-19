@@ -548,3 +548,47 @@ def test_year_between_the_last_annual_year_and_a_later_time2graze_start_serves_t
     period = biomass.resolve_biomass_period(2026, None)
 
     assert period.year == biomass.GPP_LAST_YEAR and period.requested_label == "2026"
+
+
+def test_build_without_pasture_mask_keeps_only_positive_biomass(fake_ee, monkeypatch):
+    calls = []
+    monkeypatch.setattr(biomass, "_gpp_biomass", lambda year: FakeImage(calls))
+    monkeypatch.setattr(biomass, "_mask_image", lambda mask_year: pytest.fail("no pasture mask should be built"))
+
+    image, _roi = biomass.build_biomass(_feature(), 2010, None, mask_to_pasture=False)
+
+    assert any(name == "gt" and args == (0,) for name, args in calls)
+    assert any(name == "updateMask" for name, args in image.image.calls)
+    assert any(name == "clip" for name, args in image.image.calls)
+    assert image.coverage is None
+    assert image.key[-1] == "all-biomass"
+
+
+def test_all_biomass_stats_use_a_distinct_cache_key(fake_ee):
+    masked, _ = biomass.build_biomass(_feature(), 2010, None)
+    all_biomass, _ = biomass.build_biomass(_feature(), 2010, None, mask_to_pasture=False)
+
+    stats = biomass.measure_biomass(all_biomass, "roi")
+
+    assert masked.key != all_biomass.key
+    assert stats.total_t == 3500.0 and stats.pasture_ha == 200.0
+
+
+def test_transect_measurement_extrapolates_the_line_mean_to_the_property_area(monkeypatch):
+    from domain.schemas.biomass import BiomassStats
+    from domain.services.geospatial.transect import build_transect
+
+    feature = build_transect(-15.5, -47.5, -15.51, -47.51).model_copy(update={"total_area": 500.0})
+    sampled = BiomassStats(
+        source=BiomassSource.GPW_ANNUAL, period_label="2025", start="2025-01-01", end="2025-12-31",
+        mean_t_ha=10.0, total_t=20.0, p02_t_ha=5.0, p98_t_ha=15.0, pasture_ha=1.0,
+        area_ha=2.0, scale_m=30, mask_year=2022, year=2025, days_covered=365,
+    )
+    monkeypatch.setattr(biomass, "initialize_ee", lambda: None)
+    monkeypatch.setattr(biomass, "build_biomass", lambda feature, year, month: ("image", "corridor"))
+    monkeypatch.setattr(biomass, "measure_biomass", lambda image, roi: sampled)
+
+    stats = biomass.get_biomass_total(feature, None, None)
+
+    assert stats.mean_t_ha == 10.0 and stats.total_t == 5000.0
+    assert stats.pasture_ha == 250.0 and stats.area_ha == 500.0 and stats.pasture_percent == 50.0

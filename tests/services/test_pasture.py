@@ -395,3 +395,20 @@ def test_single_class_region_falls_back_to_that_class(monkeypatch):
 )
 def test_training_years_never_include_the_predicted_year(year, expected):
     assert pasture.training_years(year) == expected
+
+
+def test_transect_measurement_extrapolates_the_line_mean_to_the_property_area(monkeypatch):
+    from domain.services.geospatial.transect import build_transect
+
+    feature = build_transect(-15.5, -47.5, -15.51, -47.51).model_copy(update={"total_area": 500.0})
+    sampled = PastureAreaStats(
+        year=2022, source=PastureSource.GPW, pasture_ha=1.0, cultivated_ha=0.7,
+        natural_ha=0.3, area_ha=2.0,
+    )
+    monkeypatch.setattr(pasture, "classify_pasture", lambda feature, year: ("classification", "corridor"))
+    monkeypatch.setattr(pasture, "measure_pasture_area", lambda classification, roi: sampled)
+
+    stats = pasture.get_pasture_area(feature, 2022)
+
+    assert stats.pasture_ha == 250.0 and stats.cultivated_ha == 175.0 and stats.natural_ha == 75.0
+    assert stats.area_ha == 500.0 and stats.pasture_percent == 50.0
