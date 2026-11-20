@@ -1,23 +1,13 @@
-FROM python:3.14-slim
-
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-# git is required for uv to fetch semente-agents from the lapig-ufg/semente
-# repository; ffmpeg is required by the TTS feature (pydub) and by the biomass video tool;
-# libarchive-tools provides bsdtar, the extractor rarfile uses for .rar uploads.
-RUN apt-get update && apt-get -y install git ffmpeg libarchive-tools \
-    && rm -rf /var/lib/apt/lists/*
+# The dependency base image (Python, uv, system packages and /app/.venv) is
+# built once from Dockerfile.base. Rebuild it only when pyproject.toml or
+# uv.lock changes:
+#
+#   docker build -f Dockerfile.base -t lapig/pasto10:base .
+#
+# Code-only changes then rebuild quickly, reusing the installed virtualenv.
+ARG BASE_IMAGE=lapig/pasto10:base
+FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
-ENV PATH="/app/.venv/bin:$PATH"
-
-COPY pyproject.toml uv.lock ./
-
-RUN uv sync --frozen --no-cache
-
 COPY . .
-
-EXPOSE 8501
-
-CMD ["streamlit", "run", "app/streamlit_app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]

@@ -86,13 +86,24 @@ Health check: `curl http://localhost:8501/_stcore/health` answers `ok`.
 
 ### With Docker
 
+The Python dependencies live in a separate base image: `Dockerfile.base` installs them into
+`/app/.venv`, and `Dockerfile` starts `FROM` that image and only copies the code. Rebuild the base
+image when `pyproject.toml` or `uv.lock` changes; code-only rebuilds then reuse the dependencies:
+
+```
+docker build -f Dockerfile.base -t lapig/pasto10:base .   # only after dependency changes
+docker compose up --build                                  # regular code rebuild
+```
+
 `docker compose up --build` builds the `Dockerfile` and starts the app. What each file does:
 
-- `Dockerfile`: Python 3.14 image with `uv`, `git` (to fetch `semente-agents`) and `ffmpeg`; it installs the
-  locked dependencies (`uv sync --frozen`), copies the code and starts
-  `streamlit run app/streamlit_app.py` on port 8501. The image has no credentials: `.dockerignore` leaves out
-  `.env`, key files, `tmp` and `logs`, so the variables and the Earth Engine key must be provided when it runs.
-  On its own it does not set `APP_ENV`, so the "Test properties" box is hidden (the production behaviour).
+- `Dockerfile.base`: Python 3.14 image with `uv`, `git` (to fetch `semente-agents`) and `ffmpeg`; it installs
+  the locked dependencies (`uv sync --frozen`) into `/app/.venv`. It is tagged `lapig/pasto10:base`, which is
+  the default base of `Dockerfile` (override it with the `BASE_IMAGE` build argument).
+- `Dockerfile`: starts from `lapig/pasto10:base` and copies the code. The image has no credentials:
+  `.dockerignore` leaves out `.env`, key files, `tmp` and `logs`, so the variables and the Earth Engine key
+  must be provided when it runs. On its own it does not set `APP_ENV`, so the "Test properties" box is hidden
+  (the production behaviour).
 - `compose.yaml`: mounts the repository over `/app` (code changes show up without rebuilding), runs
   `uv run streamlit ...` (which also checks the environment at start, so it needs network), sets
   `APP_ENV=development` (the test picker is on) and publishes host port **8501** (to use another host port,

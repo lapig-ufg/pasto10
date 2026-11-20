@@ -1,0 +1,29 @@
+# Pasto10 dependency base image.
+#
+# Build (or rebuild) it only when pyproject.toml or uv.lock changes:
+#
+#   docker build -f Dockerfile.base -t lapig/pasto10:base .
+#
+# The application Dockerfile starts FROM this image, so routine rebuilds
+# (code-only changes) reuse the already-installed /app/.venv instead of
+# resolving and downloading every dependency again.
+
+FROM python:3.14-slim
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# git is required for uv to fetch semente-agents from the lapig-ufg/semente
+# repository; ffmpeg is required by the TTS feature (pydub) and by the biomass video tool;
+# libarchive-tools provides bsdtar, the extractor rarfile uses for .rar uploads.
+RUN apt-get update && apt-get -y install git ffmpeg libarchive-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Only the dependency manifest and lock are copied here, and the virtualenv is
+# created in this layer, so the application image never re-runs the install.
+COPY pyproject.toml uv.lock ./
+
+RUN uv sync --frozen --no-cache

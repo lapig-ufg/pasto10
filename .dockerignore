@@ -1,14 +1,129 @@
-.git
-.venv
-.claude
-.env
-.env.*
-!.env.example
-*.pem
-*key*.json
-*credentials*.json
-tmp
-logs
-__pycache__
-.pytest_cache
-users_db.json
+# ---------------------------------------------------------------------------
+# Version control, editors and local assistant state
+# ---------------------------------------------------------------------------
+**/.git
+**/.gitignore
+**/.gitattributes
+**/.claude
+**/.abstra
+**/.idea
+**/.vscode
+**/.DS_Store
+**/Thumbs.db
+
+# ---------------------------------------------------------------------------
+# Python environments, caches and build artefacts
+# ---------------------------------------------------------------------------
+**/.venv
+**/venv
+**/env
+**/ENV
+**/env.bak
+**/venv.bak
+**/__pycache__
+**/*.py[codz]
+**/*.so
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.dmypy.json
+**/.hypothesis
+**/.tox
+**/.nox
+**/.coverage
+**/.coverage.*
+**/htmlcov
+**/.pdm-python
+**/.pixi
+**/__pypackages__
+**/build
+**/dist
+**/*.egg-info
+**/wheels
+**/*.manifest
+**/*.spec
+
+# ---------------------------------------------------------------------------
+# Secrets, credentials and local configuration
+# ---------------------------------------------------------------------------
+# Environment files, including .env.example. Real values must be provided at
+# run time (compose env_file or -e), never baked into the image.
+**/.env
+**/.env.*
+**/.envrc
+
+# Keys, certificates and authentication files
+**/*.pem
+**/*.key
+**/*.crt
+**/*.cer
+**/*.p12
+**/*.pfx
+**/*.p8
+**/*.jks
+**/*.keystore
+**/id_rsa
+**/id_dsa
+**/id_ecdsa
+**/id_ed25519
+**/.netrc
+**/_netrc
+**/.pgpass
+**/.my.cnf
+**/.npmrc
+**/.pypirc
+**/.git-credentials
+**/.aws
+**/.config/gcloud
+**/.config/gh
+**/.azure
+**/.kube
+**/.docker
+
+# Streamlit secrets
+**/secrets.toml
+
+# Cloud service-account and API-key JSON files. Do not ignore *.json in
+# general: domain/data/test_properties.json is required by the application.
+**/*credential*.json
+**/*credentials*.json
+**/*service-account*.json
+**/*service_account*.json
+**/*serviceaccount*.json
+**/*key*.json
+**/global-pasture-watch-*.json
+
+# Compose files hold environment-specific settings (and may contain real
+# credentials), so they are not copied into the image.
+**/compose.yaml
+**/compose.yml
+**/docker-compose.yaml
+**/docker-compose.yml
+
+# ---------------------------------------------------------------------------
+# Local runtime data
+# ---------------------------------------------------------------------------
+**/tmp
+**/logs
+**/*.log
+**/*.db
+**/*.db-journal
+**/*.sqlite
+**/*.sqlite3
+**/*.sqlite3-journal
+**/users_db.json
+**/*.rdb
+**/*.aof
+**/*.pid
+**/*.pkl
+**/*.pickle
+
+# ---------------------------------------------------------------------------
+# Docker/build files (Docker still reads the Dockerfile and .dockerignore it
+# is invoked with; they are only kept out of the copied context)
+# ---------------------------------------------------------------------------
+**/Dockerfile*
+**/.dockerignore
+
+# Note: do not ignore *.yml / *.yaml in general. semente.yaml,
+# domain/prompts/*.yml and other YAML files are part of the application.
