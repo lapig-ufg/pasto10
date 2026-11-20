@@ -3,7 +3,7 @@ language: en
 domain_module: domain
 engine: agno
 prompts_dir: domain/prompts
-channels: [streamlit]
+channels: [streamlit, whatsapp]
 features:
   tts: true
   interaction-assessment: true
