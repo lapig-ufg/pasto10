@@ -133,6 +133,7 @@ def get_tools(run_context: RunContext) -> list:
         get_dry_season_onset_forecast,
         get_temperature_forecast,
         generate_area_bulletin,
+        get_local_weather,
         Calculator(exclude_tools=["is_prime", "factorial"]),
     ]
 
