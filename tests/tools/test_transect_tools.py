@@ -99,7 +99,7 @@ def test_invalid_transect_length_returns_instructions(start, end):
         end_latitude=end[0], end_longitude=end[1],
     )
 
-    assert "between 100 and 100000 meters" in result.content
+    assert "at most 100000 meters long" in result.content
     assert not result.images
     assert run_context.session_state == {}
 

@@ -226,7 +226,7 @@ property_tools:
       invalid_coordinates: |
         The coordinate ({latitude}, {longitude}) is not valid. Apologize to the user and explain that the latitude must be between -{max_latitude} and {max_latitude} degrees and the longitude between -180 and 180 degrees (decimal degrees), then ask for both coordinates again.
       invalid_length: |
-        The distance between the two coordinates is {length_m} m, which is not accepted. Apologize and explain that a transect must be between {min_length_m} and {max_length_m} meters long, then ask for corrected start and end coordinates.
+        The distance between the two coordinates is {length_m} m, which is not accepted. Apologize and explain that the two coordinates must be different and a transect must be at most {max_length_m} meters long, then ask for corrected start and end coordinates.
       error: |
         An unexpected error occurred. Apologize to the user and suggest trying again in a moment.
   register_polygon:

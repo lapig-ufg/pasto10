@@ -37,7 +37,6 @@ from domain.services.geospatial.polygon_input import InvalidPolygon, max_polygon
 from domain.services.geospatial.transect import (
     MAX_LENGTH_METERS as _MAX_TRANSECT_LENGTH_METERS,
     MAX_TOTAL_AREA_HA,
-    MIN_LENGTH_METERS as _MIN_TRANSECT_LENGTH_METERS,
     MIN_TOTAL_AREA_HA,
     InvalidTransect,
     build_transect,
@@ -402,7 +401,7 @@ def start_transect_registration_by_coordinates(
         return ToolResult(content=get_tool_result_text(
             _COMPONENT, tool_key, "invalid_length",
             length_m=round(error.length_m, 1),
-            min_length_m=_MIN_TRANSECT_LENGTH_METERS, max_length_m=_MAX_TRANSECT_LENGTH_METERS,
+            max_length_m=_MAX_TRANSECT_LENGTH_METERS,
         ))
     except Exception:
         return unexpected_error(_COMPONENT, tool_key)

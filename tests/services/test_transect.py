@@ -5,7 +5,6 @@ import pytest
 from domain.services.geospatial.geometry import haversine_distance
 from domain.services.geospatial.transect import (
     MAX_LENGTH_METERS,
-    MIN_LENGTH_METERS,
     InvalidTransect,
     build_transect,
 )
@@ -38,6 +37,14 @@ def test_transect_midpoint_is_between_the_endpoints():
     assert feature.get_metadata("center")
 
 
+def test_short_lines_are_accepted():
+    feature = build_transect(-15.5, -47.5, -15.5001, -47.5001)
+
+    assert feature.get_metadata("length_m") == pytest.approx(
+        haversine_distance(-15.5, -47.5, -15.5001, -47.5001), abs=0.1,
+    )
+
+
 def test_line_outside_the_length_bounds_is_rejected():
     with pytest.raises(InvalidTransect) as error:
         build_transect(-15.5, -47.5, -15.5, -47.5)
@@ -48,5 +55,5 @@ def test_line_outside_the_length_bounds_is_rejected():
         build_transect(0.0, 0.0, 0.0, 2.0)
 
 
-def test_length_bounds_are_documented_in_meters():
-    assert (MIN_LENGTH_METERS, MAX_LENGTH_METERS) == (100, 100_000)
+def test_length_upper_bound_is_documented_in_meters():
+    assert MAX_LENGTH_METERS == 100_000

@@ -19,8 +19,8 @@ from domain.services.geospatial.geometry import (
     initial_bearing,
 )
 
-# Accepted distance between the two coordinates (meters).
-MIN_LENGTH_METERS = 100
+# Accepted distance between the two coordinates (meters): any positive
+# distance up to the maximum. A zero-length line has no direction.
 MAX_LENGTH_METERS = 100_000
 # Accepted total area of the property crossed by the line (hectares).
 MIN_TOTAL_AREA_HA = 0.01
@@ -28,7 +28,7 @@ MAX_TOTAL_AREA_HA = 50_000.0
 
 
 class InvalidTransect(Exception):
-    """The transect line is too short or too long.
+    """The transect line has no length or is too long.
 
     Attributes:
         length_m (float): The distance between the two coordinates, in meters.
@@ -41,8 +41,8 @@ class InvalidTransect(Exception):
             length_m (float): The distance between the two coordinates, in meters.
         """
         super().__init__(
-            f"Transect length {length_m:.1f} m is outside "
-            f"{MIN_LENGTH_METERS}-{MAX_LENGTH_METERS} m"
+            f"Transect length {length_m:.1f} m is not accepted "
+            f"(must be greater than 0 and at most {MAX_LENGTH_METERS} m)"
         )
         self.length_m = length_m
 
@@ -94,11 +94,11 @@ def build_transect(
         Feature: The transect feature (not yet stored anywhere).
 
     Raises:
-        InvalidTransect: If the distance between the coordinates is outside
-            ``MIN_LENGTH_METERS``-``MAX_LENGTH_METERS``.
+        InvalidTransect: If the distance between the coordinates is zero or
+            greater than ``MAX_LENGTH_METERS``.
     """
     length_m = haversine_distance(start_latitude, start_longitude, end_latitude, end_longitude)
-    if not MIN_LENGTH_METERS <= length_m <= MAX_LENGTH_METERS:
+    if not 0 < length_m <= MAX_LENGTH_METERS:
         log_warning(f"build_transect: invalid length {length_m:.1f} m")
         raise InvalidTransect(length_m)
 
